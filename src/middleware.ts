@@ -27,13 +27,48 @@ export async function middleware(request: NextRequest) {
 
   const isAuthPage = request.nextUrl.pathname.startsWith('/login')
   const isPublic = request.nextUrl.pathname === '/'
+  const isFuncionarioPage = request.nextUrl.pathname.startsWith('/funcionario')
+  const isDashboard = !isAuthPage && !isPublic && !isFuncionarioPage
 
   if (!user && !isAuthPage && !isPublic) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
   if (user && isAuthPage) {
+    const { data: perfil } = await supabase
+      .from('users')
+      .select('perfil')
+      .eq('id', user.id)
+      .single()
+
+    if (perfil?.perfil === 'funcionario') {
+      return NextResponse.redirect(new URL('/funcionario', request.url))
+    }
     return NextResponse.redirect(new URL('/vendas', request.url))
+  }
+
+  if (user && isFuncionarioPage) {
+    const { data: perfil } = await supabase
+      .from('users')
+      .select('perfil')
+      .eq('id', user.id)
+      .single()
+
+    if (perfil?.perfil === 'proprietario') {
+      return NextResponse.redirect(new URL('/vendas', request.url))
+    }
+  }
+
+  if (user && isDashboard) {
+    const { data: perfil } = await supabase
+      .from('users')
+      .select('perfil')
+      .eq('id', user.id)
+      .single()
+
+    if (perfil?.perfil === 'funcionario') {
+      return NextResponse.redirect(new URL('/funcionario', request.url))
+    }
   }
 
   return supabaseResponse
