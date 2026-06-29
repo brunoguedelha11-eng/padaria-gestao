@@ -50,9 +50,13 @@ export default function BalancoPage() {
 
   async function addGastoPessoal(e: React.FormEvent) {
     e.preventDefault()
-    await supabase.from('gastos_pessoais').insert({
+    const { error } = await supabase.from('gastos_pessoais').insert({
       data: formPessoal.data, descricao: formPessoal.descricao, valor: parseFloat(formPessoal.valor)
     })
+    if (error) {
+      alert('Erro ao salvar: ' + error.message)
+      return
+    }
     setFormPessoal({ data: hoje, descricao: '', valor: '' })
     fetchData()
   }
