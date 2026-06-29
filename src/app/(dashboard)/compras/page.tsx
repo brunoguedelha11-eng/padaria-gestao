@@ -2,19 +2,29 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Compra, ItemCompra } from '@/types'
+import { ItemCompra } from '@/types'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Plus, Package, Trash2, Download } from 'lucide-react'
+import { Plus, Package, Trash2, Download, ChevronDown, ChevronUp, BarChart2 } from 'lucide-react'
 import { exportToCsv } from '@/lib/exportCsv'
 
 const apresentacoes = ['kg', 'g', 'L', 'mL', 'un', 'cx', 'pct'] as const
 const hoje = format(new Date(), 'yyyy-MM-dd')
 
+interface CompraComItens {
+  id: string
+  data: string
+  fornecedor: string
+  user_id: string
+  itens_compra: ItemCompra[]
+}
+
 export default function ComprasPage() {
   const supabase = createClient()
-  const [compras, setCompras] = useState<(Compra & { itens: ItemCompra[] })[]>([])
+  const [compras, setCompras] = useState<CompraComItens[]>([])
   const [loading, setLoading] = useState(false)
+  const [expandido, setExpandido] = useState<string | null>(null)
+  const [verResumo, setVerResumo] = useState(false)
   const [form, setForm] = useState({ data: hoje, fornecedor: '' })
   const [itens, setItens] = useState([{ produto: '', quantidade: '', apresentacao: 'un', valor_unitario: '' }])
 
@@ -23,8 +33,13 @@ export default function ComprasPage() {
   async function fetchCompras() {
     const inicio = startOfMonth(new Date()).toISOString().split('T')[0]
     const fim = endOfMonth(new Date()).toISOString().split('T')[0]
-    const { data } = await supabase.from('compras').select('*, itens_compra(*)').gte('data', inicio).lte('data', fim).order('data', { ascending: false })
-    if (data) setCompras(data as any)
+    const { data } = await supabase
+      .from('compras')
+      .select('*, itens_compra(*)')
+      .gte('data', inicio)
+      .lte('data', fim)
+      .order('data', { ascending: false })
+    if (data) setCompras(data as CompraComItens[])
   }
 
   function addItem() {
@@ -46,9 +61,11 @@ export default function ComprasPage() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
 
-    const { data: compra } = await supabase.from('compras')
+    const { data: compra, error } = await supabase.from('compras')
       .insert({ data: form.data, fornecedor: form.fornecedor, user_id: user?.id })
       .select().single()
+
+    if (error) { alert('Erro: ' + error.message); setLoading(false); return }
 
     if (compra) {
       const itensData = itens.map(it => ({
@@ -59,7 +76,8 @@ export default function ComprasPage() {
         valor_unitario: parseFloat(it.valor_unitario),
         total: parseFloat(it.quantidade) * parseFloat(it.valor_unitario)
       }))
-      await supabase.from('itens_compra').insert(itensData)
+      const { error: err2 } = await supabase.from('itens_compra').insert(itensData)
+      if (err2) alert('Erro nos itens: ' + err2.message)
     }
 
     setForm({ data: hoje, fornecedor: '' })
@@ -68,7 +86,18 @@ export default function ComprasPage() {
     setLoading(false)
   }
 
-  const totalMes = compras.reduce((s, c) => s + (c.itens?.reduce((si, i) => si + i.total, 0) || 0), 0)
+  const totalMes = compras.reduce((s, c) => s + (c.itens_compra?.reduce((si, i) => si + Number(i.total), 0) || 0), 0)
+
+  // Resumo por produto
+  const resumoProdutos = compras.flatMap(c => c.itens_compra || []).reduce((acc, it) => {
+    const key = `${it.produto}__${it.apresentacao}`
+    if (!acc[key]) acc[key] = { produto: it.produto, apresentacao: it.apresentacao, quantidade: 0, total: 0 }
+    acc[key].quantidade += Number(it.quantidade)
+    acc[key].total += Number(it.total)
+    return acc
+  }, {} as Record<string, { produto: string; apresentacao: string; quantidade: number; total: number }>)
+
+  const resumoLista = Object.values(resumoProdutos).sort((a, b) => b.total - a.total)
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -78,18 +107,58 @@ export default function ComprasPage() {
           <h1 className="text-2xl font-bold text-gray-800">Compras</h1>
         </div>
         <div className="flex items-center gap-3">
-        <button
-          onClick={() => exportToCsv('compras', compras.flatMap(c => (c.itens || []).map(i => ({ Data: c.data, Fornecedor: c.fornecedor, Produto: i.produto, Quantidade: i.quantidade, Apresentação: i.apresentacao, 'Valor Unit.': i.valor_unitario, Total: i.total }))))}
-          className="flex items-center gap-2 text-sm border border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors"
-        >
-          <Download className="w-4 h-4" /> Exportar CSV
-        </button>
-        <div className="bg-white border rounded-xl px-4 py-2 text-sm">
-          <span className="text-gray-500">Total do mês:</span>
-          <span className="font-bold text-gray-800 ml-2">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-        </div>
+          <button
+            onClick={() => setVerResumo(!verResumo)}
+            className={`flex items-center gap-2 text-sm border rounded-lg px-3 py-2 transition-colors ${verResumo ? 'bg-amber-700 text-white border-amber-700' : 'border-gray-300 hover:bg-gray-50'}`}
+          >
+            <BarChart2 className="w-4 h-4" /> Resumo do mês
+          </button>
+          <button
+            onClick={() => exportToCsv('compras', compras.flatMap(c => (c.itens_compra || []).map(i => ({ Data: c.data, Fornecedor: c.fornecedor, Produto: i.produto, Quantidade: i.quantidade, Apresentação: i.apresentacao, 'Valor Unit.': i.valor_unitario, Total: i.total }))))}
+            className="flex items-center gap-2 text-sm border border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors"
+          >
+            <Download className="w-4 h-4" /> Exportar CSV
+          </button>
+          <div className="bg-white border rounded-xl px-4 py-2 text-sm">
+            <span className="text-gray-500">Total do mês:</span>
+            <span className="font-bold text-gray-800 ml-2">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+          </div>
         </div>
       </div>
+
+      {verResumo && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="p-4 border-b bg-amber-50">
+            <h2 className="font-semibold text-amber-900 flex items-center gap-2">
+              <BarChart2 className="w-4 h-4" /> Resumo de compras — {format(new Date(), 'MMMM yyyy', { locale: ptBR })}
+            </h2>
+            <p className="text-xs text-amber-700 mt-1">Total gasto: <strong>R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> em {compras.length} compra(s)</p>
+          </div>
+          {resumoLista.length === 0 ? (
+            <p className="text-center text-gray-400 py-6 text-sm">Nenhuma compra este mês</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  {['Produto', 'Qtd total', 'Unidade', 'Total gasto'].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {resumoLista.map(r => (
+                  <tr key={r.produto + r.apresentacao} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium">{r.produto}</td>
+                    <td className="px-4 py-3">{r.quantidade.toLocaleString('pt-BR')}</td>
+                    <td className="px-4 py-3 text-gray-500">{r.apresentacao}</td>
+                    <td className="px-4 py-3 font-semibold text-amber-700">R$ {r.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl p-6 shadow-sm border">
         <h2 className="font-semibold text-gray-800 mb-4 flex items-center gap-2"><Plus className="w-4 h-4" />Nova compra</h2>
@@ -109,19 +178,25 @@ export default function ComprasPage() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-medium text-gray-600">Itens</label>
+            <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-1">
+              <div className="col-span-4">Produto</div>
+              <div className="col-span-2">Quantidade</div>
+              <div className="col-span-2">Unidade</div>
+              <div className="col-span-2">Valor unit.</div>
+              <div className="col-span-2">Total</div>
+            </div>
             {itens.map((item, i) => {
               const total = (parseFloat(item.quantidade || '0') * parseFloat(item.valor_unitario || '0'))
               return (
-                <div key={i} className="grid grid-cols-12 gap-2 items-end">
+                <div key={i} className="grid grid-cols-12 gap-2 items-center">
                   <div className="col-span-4">
                     <input value={item.produto} onChange={e => updateItem(i, 'produto', e.target.value)}
-                      placeholder="Produto" required
+                      placeholder="Ex: Farinha de trigo" required
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
                   </div>
                   <div className="col-span-2">
-                    <input type="number" value={item.quantidade} onChange={e => updateItem(i, 'quantidade', e.target.value)}
-                      placeholder="Qtd" required
+                    <input type="number" step="0.001" value={item.quantidade} onChange={e => updateItem(i, 'quantidade', e.target.value)}
+                      placeholder="0" required
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
                   </div>
                   <div className="col-span-2">
@@ -132,11 +207,11 @@ export default function ComprasPage() {
                   </div>
                   <div className="col-span-2">
                     <input type="number" step="0.01" value={item.valor_unitario} onChange={e => updateItem(i, 'valor_unitario', e.target.value)}
-                      placeholder="Valor" required
+                      placeholder="0,00" required
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
                   </div>
-                  <div className="col-span-1 text-xs text-gray-500 pb-2">R$ {total.toFixed(2)}</div>
-                  <div className="col-span-1">
+                  <div className="col-span-1 text-sm font-medium text-gray-700">R$ {total.toFixed(2)}</div>
+                  <div className="col-span-1 flex justify-center">
                     {itens.length > 1 && (
                       <button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600">
                         <Trash2 className="w-4 h-4" />
@@ -146,12 +221,17 @@ export default function ComprasPage() {
                 </div>
               )
             })}
-            <button type="button" onClick={addItem} className="text-amber-700 text-sm hover:underline flex items-center gap-1">
+            <button type="button" onClick={addItem} className="text-amber-700 text-sm hover:underline flex items-center gap-1 mt-2">
               <Plus className="w-3 h-3" /> Adicionar item
             </button>
           </div>
 
-          <div className="flex justify-end pt-2 border-t">
+          <div className="flex items-center justify-between pt-2 border-t">
+            <div className="text-sm font-medium text-gray-700">
+              Total da compra: <span className="text-amber-700 font-bold">
+                R$ {itens.reduce((s, it) => s + (parseFloat(it.quantidade || '0') * parseFloat(it.valor_unitario || '0')), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
             <button type="submit" disabled={loading}
               className="bg-amber-700 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-amber-800 transition-colors disabled:opacity-50">
               {loading ? 'Salvando...' : 'Salvar compra'}
@@ -167,26 +247,56 @@ export default function ComprasPage() {
         ) : (
           <div className="divide-y">
             {compras.map(c => {
-              const totalCompra = c.itens?.reduce((s, i) => s + i.total, 0) || 0
+              const totalCompra = c.itens_compra?.reduce((s, i) => s + Number(i.total), 0) || 0
+              const aberto = expandido === c.id
               return (
-                <div key={c.id} className="p-4">
-                  <div className="flex justify-between items-center mb-2">
+                <div key={c.id}>
+                  <button
+                    onClick={() => setExpandido(aberto ? null : c.id)}
+                    className="w-full p-4 flex justify-between items-center hover:bg-gray-50 transition-colors text-left"
+                  >
                     <div>
                       <span className="font-medium text-gray-800">{c.fornecedor}</span>
                       <span className="text-gray-400 text-sm ml-3">
-                        {format(new Date(c.data + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}
+                        {format(new Date(c.data + 'T12:00:00'), "dd 'de' MMMM", { locale: ptBR })}
                       </span>
+                      <span className="text-gray-400 text-xs ml-2">({c.itens_compra?.length || 0} item(s))</span>
                     </div>
-                    <span className="font-bold text-gray-800">R$ {totalCompra.toFixed(2)}</span>
-                  </div>
-                  <div className="text-xs text-gray-500 space-y-1">
-                    {c.itens?.map(it => (
-                      <div key={it.id} className="flex justify-between">
-                        <span>{it.produto} — {it.quantidade} {it.apresentacao}</span>
-                        <span>R$ {it.total.toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold text-gray-800">R$ {totalCompra.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      {aberto ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                    </div>
+                  </button>
+                  {aberto && (
+                    <div className="px-4 pb-4 bg-gray-50 border-t">
+                      <table className="w-full text-sm mt-3">
+                        <thead>
+                          <tr className="text-xs text-gray-500">
+                            <th className="text-left pb-2">Produto</th>
+                            <th className="text-left pb-2">Quantidade</th>
+                            <th className="text-left pb-2">Valor unit.</th>
+                            <th className="text-right pb-2">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {c.itens_compra?.map(it => (
+                            <tr key={it.id}>
+                              <td className="py-2 font-medium">{it.produto}</td>
+                              <td className="py-2 text-gray-600">{it.quantidade} {it.apresentacao}</td>
+                              <td className="py-2 text-gray-600">R$ {Number(it.valor_unitario).toFixed(2)}</td>
+                              <td className="py-2 text-right font-semibold">R$ {Number(it.total).toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t border-gray-300">
+                            <td colSpan={3} className="pt-2 text-xs text-gray-500 font-medium">Total da compra</td>
+                            <td className="pt-2 text-right font-bold text-amber-700">R$ {totalCompra.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )
             })}
