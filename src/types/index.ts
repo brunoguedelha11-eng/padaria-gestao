@@ -54,6 +54,14 @@ export interface GastoPessoal {
   valor: number
 }
 
+export interface CustoVariavel {
+  id: string
+  data: string
+  categoria: string
+  descricao?: string
+  valor: number
+}
+
 export interface Producao {
   id: string
   data: string
