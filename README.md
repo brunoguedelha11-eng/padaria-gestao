@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+﻿# Gestão Padaria
 
-## Getting Started
+Plataforma web completa de gestão para padaria, construída com Next.js 14, Supabase e Tailwind CSS.
 
-First, run the development server:
+## Módulos
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Vendas Diárias** — lançamento por Dinheiro, Débito, Crédito e Pix, com meta mensal
+- **Compras** — registro de compras por fornecedor com itens detalhados
+- **Balanço Financeiro** — custos fixos, gastos pessoais e resultado líquido
+- **Produção e Desperdício** — controle de produção com alerta de taxa de desperdício
+- **Relatórios** — gráficos de vendas mensais, por pagamento e por dia da semana
+- **Assistente IA** — chat com Claude especialista em padaria
+- **Alertas** — estoque baixo, metas e desperdício
+- **Acesso Funcionário** — tela simplificada apenas para produção
+
+## Configuração
+
+### 1. Variáveis de ambiente
+
+Copie `.env.local` e preencha:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=sua_url_do_supabase
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_chave_anonima
+ANTHROPIC_API_KEY=sua_chave_anthropic
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Banco de dados
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Execute o arquivo `supabase-schema.sql` no SQL Editor do Supabase.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Rodar localmente
 
-## Learn More
+```bash
+npm install
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Acesse [http://localhost:3000](http://localhost:3000)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Conecte o repositório na Vercel e adicione as variáveis de ambiente no painel.
