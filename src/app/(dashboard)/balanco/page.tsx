@@ -77,7 +77,7 @@ export default function BalancoPage() {
       <div className="flex items-center gap-3">
         <BarChart3 className="w-6 h-6 text-amber-700" />
         <h1 className="text-2xl font-bold text-gray-800">Balanço Financeiro</h1>
-        <span className="text-gray-400 text-sm ml-2">{format(new Date(), 'MMMM yyyy', { locale: { localize: { month: (i: number) => ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][i] } as any } })}</span>
+        <span className="text-gray-400 text-sm ml-2">{['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][new Date().getMonth()]} {new Date().getFullYear()}</span>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
