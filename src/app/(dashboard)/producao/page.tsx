@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Producao, Meta } from '@/types'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
-import { Recycle, Plus, AlertTriangle } from 'lucide-react'
+import { Recycle, Plus, AlertTriangle, Download } from 'lucide-react'
+import { exportToCsv } from '@/lib/exportCsv'
 
 const hoje = format(new Date(), 'yyyy-MM-dd')
 const mesAtual = format(new Date(), 'yyyy-MM')
@@ -53,9 +54,17 @@ export default function ProducaoPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <Recycle className="w-6 h-6 text-amber-700" />
-        <h1 className="text-2xl font-bold text-gray-800">Produção e Desperdício</h1>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Recycle className="w-6 h-6 text-amber-700" />
+          <h1 className="text-2xl font-bold text-gray-800">Produção e Desperdício</h1>
+        </div>
+        <button
+          onClick={() => exportToCsv('producao', producoes.map(p => ({ Data: p.data, Produto: p.produto, Produzido: p.produzido, Descartado: p.descartado, 'Taxa (%)': ((p.descartado / p.produzido) * 100).toFixed(1), 'Custo Desperdício': p.custo_estimado })))}
+          className="flex items-center gap-2 text-sm border border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors"
+        >
+          <Download className="w-4 h-4" /> Exportar CSV
+        </button>
       </div>
 
       <div className="grid grid-cols-3 gap-4">

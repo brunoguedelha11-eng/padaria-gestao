@@ -5,7 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { Compra, ItemCompra } from '@/types'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Plus, Package, Trash2 } from 'lucide-react'
+import { Plus, Package, Trash2, Download } from 'lucide-react'
+import { exportToCsv } from '@/lib/exportCsv'
 
 const apresentacoes = ['kg', 'g', 'L', 'mL', 'un', 'cx', 'pct'] as const
 const hoje = format(new Date(), 'yyyy-MM-dd')
@@ -76,9 +77,17 @@ export default function ComprasPage() {
           <Package className="w-6 h-6 text-amber-700" />
           <h1 className="text-2xl font-bold text-gray-800">Compras</h1>
         </div>
+        <div className="flex items-center gap-3">
+        <button
+          onClick={() => exportToCsv('compras', compras.flatMap(c => (c.itens || []).map(i => ({ Data: c.data, Fornecedor: c.fornecedor, Produto: i.produto, Quantidade: i.quantidade, Apresentação: i.apresentacao, 'Valor Unit.': i.valor_unitario, Total: i.total }))))}
+          className="flex items-center gap-2 text-sm border border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors"
+        >
+          <Download className="w-4 h-4" /> Exportar CSV
+        </button>
         <div className="bg-white border rounded-xl px-4 py-2 text-sm">
           <span className="text-gray-500">Total do mês:</span>
           <span className="font-bold text-gray-800 ml-2">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+        </div>
         </div>
       </div>
 
