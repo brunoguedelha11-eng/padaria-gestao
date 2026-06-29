@@ -24,7 +24,7 @@ export default function BalancoPage() {
 
   async function fetchData() {
     const inicio = `${mesAtual}-01`
-    const fim = `${mesAtual}-31`
+    const fim = format(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0), 'yyyy-MM-dd')
 
     const [{ data: cf }, { data: gp }, { data: vendas }, { data: compras }] = await Promise.all([
       supabase.from('custos_fixos').select('*').eq('mes_referencia', mesAtual),
