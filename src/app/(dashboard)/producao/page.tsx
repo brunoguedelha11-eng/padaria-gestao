@@ -7,9 +7,9 @@ import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Recycle, Plus, AlertTriangle, Download, ChevronDown, ChevronUp, BarChart2, Trash2, Pencil, Check, X } from 'lucide-react'
 import { exportToCsv } from '@/lib/exportCsv'
+import MonthNav from '@/components/MonthNav'
 
 const hoje = format(new Date(), 'yyyy-MM-dd')
-const mesAtual = format(new Date(), 'yyyy-MM')
 
 interface ItemEditavel extends Producao {
   editando?: boolean
@@ -21,6 +21,7 @@ interface ItemEditavel extends Producao {
 
 export default function ProducaoPage() {
   const supabase = createClient()
+  const [mes, setMes] = useState(new Date())
   const [producoes, setProducoes] = useState<ItemEditavel[]>([])
   const [meta, setMeta] = useState<Meta | null>(null)
   const [loading, setLoading] = useState(false)
@@ -28,15 +29,23 @@ export default function ProducaoPage() {
   const [verResumo, setVerResumo] = useState(false)
   const [itens, setItens] = useState([{ produto: '', produzido: '', descartado: '', custo_estimado: '' }])
   const [dataForm, setDataForm] = useState(hoje)
+  const [produtos, setProdutos] = useState<string[]>([])
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => { fetchData() }, [mes])
+  useEffect(() => { fetchProdutos() }, [])
+
+  async function fetchProdutos() {
+    const { data } = await supabase.from('produtos').select('nome').in('categoria', ['producao', 'ambos']).order('nome')
+    if (data) setProdutos(data.map(p => p.nome))
+  }
 
   async function fetchData() {
-    const inicio = startOfMonth(new Date()).toISOString().split('T')[0]
-    const fim = endOfMonth(new Date()).toISOString().split('T')[0]
+    const inicio = startOfMonth(mes).toISOString().split('T')[0]
+    const fim = endOfMonth(mes).toISOString().split('T')[0]
+    const mesRef = format(mes, 'yyyy-MM')
     const [{ data: p }, { data: m }] = await Promise.all([
       supabase.from('producao').select('*').gte('data', inicio).lte('data', fim).order('data', { ascending: false }),
-      supabase.from('metas').select('*').eq('mes_referencia', mesAtual).single()
+      supabase.from('metas').select('*').eq('mes_referencia', mesRef).single()
     ])
     if (p) setProducoes(p)
     if (m) setMeta(m)
@@ -144,14 +153,15 @@ export default function ProducaoPage() {
           <h1 className="text-2xl font-bold text-gray-800">Produção e Desperdício</h1>
         </div>
         <div className="flex items-center gap-3">
+          <MonthNav mes={mes} onChange={setMes} />
           <button onClick={() => setVerResumo(!verResumo)}
             className={`flex items-center gap-2 text-sm border rounded-lg px-3 py-2 transition-colors ${verResumo ? 'bg-amber-700 text-white border-amber-700' : 'border-gray-300 hover:bg-gray-50'}`}>
-            <BarChart2 className="w-4 h-4" /> Resumo do mês
+            <BarChart2 className="w-4 h-4" /> Resumo
           </button>
           <button
             onClick={() => exportToCsv('producao', producoes.map(p => ({ Data: p.data, Produto: p.produto, Produzido: p.produzido, Descartado: p.descartado, 'Taxa (%)': ((p.descartado / p.produzido) * 100).toFixed(1), 'Custo Desperdício': p.custo_estimado })))}
             className="flex items-center gap-2 text-sm border border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors">
-            <Download className="w-4 h-4" /> Exportar CSV
+            <Download className="w-4 h-4" /> CSV
           </button>
         </div>
       </div>
@@ -245,9 +255,10 @@ export default function ProducaoPage() {
             {itens.map((item, i) => (
               <div key={i} className="grid grid-cols-12 gap-2 items-center">
                 <div className="col-span-4">
-                  <input value={item.produto} onChange={e => updateItem(i, 'produto', e.target.value)}
+                  <input list="produtos-producao" value={item.produto} onChange={e => updateItem(i, 'produto', e.target.value)}
                     placeholder="Ex: Pão francês" required
                     className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                  <datalist id="produtos-producao">{produtos.map(p => <option key={p} value={p} />)}</datalist>
                 </div>
                 <div className="col-span-2">
                   <input type="number" value={item.produzido} onChange={e => updateItem(i, 'produzido', e.target.value)}

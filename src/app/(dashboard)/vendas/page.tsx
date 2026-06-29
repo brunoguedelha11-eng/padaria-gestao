@@ -7,29 +7,29 @@ import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Plus, TrendingUp, Download, Pencil, Trash2, X, Check } from 'lucide-react'
 import { exportToCsv } from '@/lib/exportCsv'
+import MonthNav from '@/components/MonthNav'
 
 const hoje = format(new Date(), 'yyyy-MM-dd')
-
 const formVazio = { data: hoje, dinheiro: '', debito: '', credito: '', pix: '', saidas: '', obs: '' }
 
 export default function VendasPage() {
   const supabase = createClient()
+  const [mes, setMes] = useState(new Date())
   const [vendas, setVendas] = useState<Venda[]>([])
   const [meta, setMeta] = useState<Meta | null>(null)
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState(formVazio)
   const [editandoId, setEditandoId] = useState<string | null>(null)
 
-  const mesAtual = format(new Date(), 'yyyy-MM')
-
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => { fetchData() }, [mes])
 
   async function fetchData() {
-    const inicio = startOfMonth(new Date()).toISOString().split('T')[0]
-    const fim = endOfMonth(new Date()).toISOString().split('T')[0]
+    const inicio = startOfMonth(mes).toISOString().split('T')[0]
+    const fim = endOfMonth(mes).toISOString().split('T')[0]
+    const mesRef = format(mes, 'yyyy-MM')
     const [{ data: v }, { data: m }] = await Promise.all([
       supabase.from('vendas').select('*').gte('data', inicio).lte('data', fim).order('data', { ascending: false }),
-      supabase.from('metas').select('*').eq('mes_referencia', mesAtual).single()
+      supabase.from('metas').select('*').eq('mes_referencia', mesRef).single()
     ])
     if (v) setVendas(v)
     if (m) setMeta(m)
@@ -55,16 +55,10 @@ export default function VendasPage() {
     const total = din + deb + cred + pix - saidas
 
     if (editandoId) {
-      await supabase.from('vendas').update({
-        data: form.data, dinheiro: din, debito: deb, credito: cred,
-        pix, saidas, total, obs: form.obs
-      }).eq('id', editandoId)
+      await supabase.from('vendas').update({ data: form.data, dinheiro: din, debito: deb, credito: cred, pix, saidas, total, obs: form.obs }).eq('id', editandoId)
       setEditandoId(null)
     } else {
-      await supabase.from('vendas').insert({
-        data: form.data, dinheiro: din, debito: deb, credito: cred,
-        pix, saidas, total, obs: form.obs, user_id: user?.id
-      })
+      await supabase.from('vendas').insert({ data: form.data, dinheiro: din, debito: deb, credito: cred, pix, saidas, total, obs: form.obs, user_id: user?.id })
     }
     setForm(formVazio)
     fetchData()
@@ -73,18 +67,8 @@ export default function VendasPage() {
 
   function iniciarEdicao(v: Venda) {
     setEditandoId(v.id)
-    setForm({
-      data: v.data, dinheiro: v.dinheiro > 0 ? String(v.dinheiro) : '',
-      debito: v.debito > 0 ? String(v.debito) : '', credito: v.credito > 0 ? String(v.credito) : '',
-      pix: v.pix > 0 ? String(v.pix) : '', saidas: v.saidas > 0 ? String(v.saidas) : '',
-      obs: v.obs || ''
-    })
+    setForm({ data: v.data, dinheiro: v.dinheiro > 0 ? String(v.dinheiro) : '', debito: v.debito > 0 ? String(v.debito) : '', credito: v.credito > 0 ? String(v.credito) : '', pix: v.pix > 0 ? String(v.pix) : '', saidas: v.saidas > 0 ? String(v.saidas) : '', obs: v.obs || '' })
     window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  function cancelarEdicao() {
-    setEditandoId(null)
-    setForm(formVazio)
   }
 
   async function deletarVenda(id: string) {
@@ -100,21 +84,20 @@ export default function VendasPage() {
           <TrendingUp className="w-6 h-6 text-amber-700" />
           <h1 className="text-2xl font-bold text-gray-800">Vendas Diárias</h1>
         </div>
-        <button
-          onClick={() => exportToCsv('vendas', vendas.map(v => ({ Data: v.data, Dinheiro: v.dinheiro, Débito: v.debito, Crédito: v.credito, Pix: v.pix, Saídas: v.saidas, Total: v.total, Observações: v.obs || '' })))}
-          className="flex items-center gap-2 text-sm border border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors"
-        >
-          <Download className="w-4 h-4" /> Exportar CSV
-        </button>
+        <div className="flex items-center gap-3">
+          <MonthNav mes={mes} onChange={setMes} />
+          <button onClick={() => exportToCsv('vendas', vendas.map(v => ({ Data: v.data, Dinheiro: v.dinheiro, Débito: v.debito, Crédito: v.credito, Pix: v.pix, Saídas: v.saidas, Total: v.total, Observações: v.obs || '' })))}
+            className="flex items-center gap-2 text-sm border border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors">
+            <Download className="w-4 h-4" /> CSV
+          </button>
+        </div>
       </div>
 
       {meta && (
         <div className="bg-white rounded-xl p-5 shadow-sm border">
           <div className="flex justify-between text-sm mb-2">
             <span className="font-medium text-gray-700">Meta mensal</span>
-            <span className="text-gray-500">
-              R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / R$ {meta.meta_vendas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </span>
+            <span className="text-gray-500">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / R$ {meta.meta_vendas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
           </div>
           <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
             <div className="h-full bg-amber-500 rounded-full transition-all" style={{ width: `${progressoPct}%` }} />
@@ -140,8 +123,7 @@ export default function VendasPage() {
               <div key={field}>
                 <label className="text-xs font-medium text-gray-600">{label}</label>
                 <input type={type} step={type === 'number' ? '0.01' : undefined}
-                  value={(form as any)[field]}
-                  onChange={e => setForm({ ...form, [field]: e.target.value })}
+                  value={(form as any)[field]} onChange={e => setForm({ ...form, [field]: e.target.value })}
                   placeholder={type === 'number' ? '0,00' : undefined}
                   className="w-full border rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-amber-500" />
               </div>
@@ -161,7 +143,7 @@ export default function VendasPage() {
             </div>
             <div className="flex gap-2">
               {editandoId && (
-                <button type="button" onClick={cancelarEdicao}
+                <button type="button" onClick={() => { setEditandoId(null); setForm(formVazio) }}
                   className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 flex items-center gap-1">
                   <X className="w-3 h-3" /> Cancelar
                 </button>
@@ -176,17 +158,18 @@ export default function VendasPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="p-4 border-b"><h2 className="font-semibold text-gray-800">Histórico do mês</h2></div>
+        <div className="p-4 border-b flex justify-between items-center">
+          <h2 className="font-semibold text-gray-800">Histórico</h2>
+          <span className="text-sm font-medium text-gray-700">Total: <span className="text-green-600 font-bold">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></span>
+        </div>
         {vendas.length === 0 ? (
-          <p className="text-center text-gray-400 py-8 text-sm">Nenhuma venda lançada este mês</p>
+          <p className="text-center text-gray-400 py-8 text-sm">Nenhuma venda neste mês</p>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
-              <tr>
-                {['Data', 'Dinheiro', 'Débito', 'Crédito', 'Pix', 'Saídas', 'Total', 'Obs', ''].map(h => (
-                  <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500">{h}</th>
-                ))}
-              </tr>
+              <tr>{['Data', 'Dinheiro', 'Débito', 'Crédito', 'Pix', 'Saídas', 'Total', 'Obs', ''].map(h => (
+                <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500">{h}</th>
+              ))}</tr>
             </thead>
             <tbody className="divide-y">
               {vendas.map(v => (
@@ -198,17 +181,11 @@ export default function VendasPage() {
                   <td className="px-4 py-3">{v.pix > 0 ? `R$ ${v.pix.toFixed(2)}` : '-'}</td>
                   <td className="px-4 py-3 text-red-500">{v.saidas > 0 ? `-R$ ${v.saidas.toFixed(2)}` : '-'}</td>
                   <td className="px-4 py-3 font-semibold text-green-600">R$ {v.total.toFixed(2)}</td>
-                  <td className="px-4 py-3 text-gray-400 max-w-[100px] truncate">{v.obs || '-'}</td>
+                  <td className="px-4 py-3 text-gray-400 max-w-[80px] truncate">{v.obs || '-'}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      <button onClick={() => iniciarEdicao(v)} title="Editar"
-                        className="text-gray-400 hover:text-amber-600 transition-colors">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => deletarVenda(v.id)} title="Apagar"
-                        className="text-gray-400 hover:text-red-500 transition-colors">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <button onClick={() => iniciarEdicao(v)} className="text-gray-400 hover:text-amber-600"><Pencil className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => deletarVenda(v.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   </td>
                 </tr>

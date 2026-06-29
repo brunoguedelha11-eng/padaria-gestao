@@ -44,7 +44,7 @@ export async function middleware(request: NextRequest) {
     if (perfil?.perfil === 'funcionario') {
       return NextResponse.redirect(new URL('/funcionario', request.url))
     }
-    return NextResponse.redirect(new URL('/vendas', request.url))
+    return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   if (user && isFuncionarioPage) {
@@ -55,7 +55,7 @@ export async function middleware(request: NextRequest) {
       .single()
 
     if (perfil?.perfil === 'proprietario') {
-      return NextResponse.redirect(new URL('/vendas', request.url))
+      return NextResponse.redirect(new URL('/dashboard', request.url))
     }
   }
 

@@ -7,28 +7,22 @@ import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Plus, Package, Trash2, Download, ChevronDown, ChevronUp, BarChart2, Pencil, Check, X } from 'lucide-react'
 import { exportToCsv } from '@/lib/exportCsv'
+import MonthNav from '@/components/MonthNav'
 
 const apresentacoes = ['kg', 'g', 'L', 'mL', 'un', 'cx', 'pct'] as const
 const hoje = format(new Date(), 'yyyy-MM-dd')
 
 interface CompraComItens {
-  id: string
-  data: string
-  fornecedor: string
-  user_id: string
-  itens_compra: ItemCompra[]
+  id: string; data: string; fornecedor: string; user_id: string; itens_compra: ItemCompra[]
 }
 
 interface ItemEditavel extends ItemCompra {
-  editando?: boolean
-  _quantidade?: string
-  _valor_unitario?: string
-  _produto?: string
-  _apresentacao?: string
+  editando?: boolean; _quantidade?: string; _valor_unitario?: string; _produto?: string; _apresentacao?: string
 }
 
 export default function ComprasPage() {
   const supabase = createClient()
+  const [mes, setMes] = useState(new Date())
   const [compras, setCompras] = useState<CompraComItens[]>([])
   const [expandido, setExpandido] = useState<string | null>(null)
   const [verResumo, setVerResumo] = useState(false)
@@ -36,16 +30,21 @@ export default function ComprasPage() {
   const [form, setForm] = useState({ data: hoje, fornecedor: '' })
   const [itens, setItens] = useState([{ produto: '', quantidade: '', apresentacao: 'un', valor_unitario: '' }])
   const [itensEditaveis, setItensEditaveis] = useState<Record<string, ItemEditavel[]>>({})
+  const [produtos, setProdutos] = useState<string[]>([])
 
-  useEffect(() => { fetchCompras() }, [])
+  useEffect(() => { fetchCompras() }, [mes])
+  useEffect(() => { fetchProdutos() }, [])
+
+  async function fetchProdutos() {
+    const { data } = await supabase.from('produtos').select('nome').in('categoria', ['compra', 'ambos']).order('nome')
+    if (data) setProdutos(data.map(p => p.nome))
+  }
 
   async function fetchCompras() {
-    const inicio = startOfMonth(new Date()).toISOString().split('T')[0]
-    const fim = endOfMonth(new Date()).toISOString().split('T')[0]
-    const { data } = await supabase
-      .from('compras').select('*, itens_compra(*)')
-      .gte('data', inicio).lte('data', fim)
-      .order('data', { ascending: false })
+    const inicio = startOfMonth(mes).toISOString().split('T')[0]
+    const fim = endOfMonth(mes).toISOString().split('T')[0]
+    const { data } = await supabase.from('compras').select('*, itens_compra(*)')
+      .gte('data', inicio).lte('data', fim).order('data', { ascending: false })
     if (data) {
       setCompras(data as CompraComItens[])
       const mapa: Record<string, ItemEditavel[]> = {}
@@ -54,42 +53,25 @@ export default function ComprasPage() {
     }
   }
 
-  function addItem() {
-    setItens([...itens, { produto: '', quantidade: '', apresentacao: 'un', valor_unitario: '' }])
-  }
-
-  function removeItem(i: number) {
-    setItens(itens.filter((_, idx) => idx !== i))
-  }
-
+  function addItem() { setItens([...itens, { produto: '', quantidade: '', apresentacao: 'un', valor_unitario: '' }]) }
+  function removeItem(i: number) { setItens(itens.filter((_, idx) => idx !== i)) }
   function updateItem(i: number, field: string, value: string) {
-    const novo = [...itens]
-    novo[i] = { ...novo[i], [field]: value }
-    setItens(novo)
+    const novo = [...itens]; novo[i] = { ...novo[i], [field]: value }; setItens(novo)
   }
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
+    e.preventDefault(); setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const { data: compra, error } = await supabase.from('compras')
-      .insert({ data: form.data, fornecedor: form.fornecedor, user_id: user?.id })
-      .select().single()
+    const { data: compra, error } = await supabase.from('compras').insert({ data: form.data, fornecedor: form.fornecedor, user_id: user?.id }).select().single()
     if (error) { alert('Erro: ' + error.message); setLoading(false); return }
     if (compra) {
-      const itensData = itens.map(it => ({
-        compra_id: compra.id, produto: it.produto,
-        quantidade: parseFloat(it.quantidade), apresentacao: it.apresentacao,
-        valor_unitario: parseFloat(it.valor_unitario),
-        total: parseFloat(it.quantidade) * parseFloat(it.valor_unitario)
-      }))
+      const itensData = itens.map(it => ({ compra_id: compra.id, produto: it.produto, quantidade: parseFloat(it.quantidade), apresentacao: it.apresentacao, valor_unitario: parseFloat(it.valor_unitario), total: parseFloat(it.quantidade) * parseFloat(it.valor_unitario) }))
       const { error: err2 } = await supabase.from('itens_compra').insert(itensData)
       if (err2) alert('Erro nos itens: ' + err2.message)
     }
     setForm({ data: hoje, fornecedor: '' })
     setItens([{ produto: '', quantidade: '', apresentacao: 'un', valor_unitario: '' }])
-    fetchCompras()
-    setLoading(false)
+    fetchCompras(); setLoading(false)
   }
 
   async function deletarCompra(id: string) {
@@ -99,33 +81,22 @@ export default function ComprasPage() {
     fetchCompras()
   }
 
-  async function deletarItem(compraId: string, itemId: string) {
+  async function deletarItem(itemId: string) {
     if (!confirm('Apagar este item?')) return
     await supabase.from('itens_compra').delete().eq('id', itemId)
     fetchCompras()
   }
 
   function iniciarEdicaoItem(compraId: string, itemId: string) {
-    setItensEditaveis(prev => ({
-      ...prev,
-      [compraId]: prev[compraId].map(it => it.id === itemId
-        ? { ...it, editando: true, _produto: it.produto, _quantidade: String(it.quantidade), _apresentacao: it.apresentacao, _valor_unitario: String(it.valor_unitario) }
-        : it)
-    }))
+    setItensEditaveis(prev => ({ ...prev, [compraId]: prev[compraId].map(it => it.id === itemId ? { ...it, editando: true, _produto: it.produto, _quantidade: String(it.quantidade), _apresentacao: it.apresentacao, _valor_unitario: String(it.valor_unitario) } : it) }))
   }
 
   function cancelarEdicaoItem(compraId: string, itemId: string) {
-    setItensEditaveis(prev => ({
-      ...prev,
-      [compraId]: prev[compraId].map(it => it.id === itemId ? { ...it, editando: false } : it)
-    }))
+    setItensEditaveis(prev => ({ ...prev, [compraId]: prev[compraId].map(it => it.id === itemId ? { ...it, editando: false } : it) }))
   }
 
   function atualizarCampoItem(compraId: string, itemId: string, campo: string, valor: string) {
-    setItensEditaveis(prev => ({
-      ...prev,
-      [compraId]: prev[compraId].map(it => it.id === itemId ? { ...it, [campo]: valor } : it)
-    }))
+    setItensEditaveis(prev => ({ ...prev, [compraId]: prev[compraId].map(it => it.id === itemId ? { ...it, [campo]: valor } : it) }))
   }
 
   async function salvarEdicaoItem(compraId: string, itemId: string) {
@@ -133,24 +104,18 @@ export default function ComprasPage() {
     if (!item) return
     const quantidade = parseFloat(item._quantidade || '0')
     const valor_unitario = parseFloat(item._valor_unitario || '0')
-    const { error } = await supabase.from('itens_compra').update({
-      produto: item._produto, quantidade, apresentacao: item._apresentacao,
-      valor_unitario, total: quantidade * valor_unitario
-    }).eq('id', itemId)
+    const { error } = await supabase.from('itens_compra').update({ produto: item._produto, quantidade, apresentacao: item._apresentacao, valor_unitario, total: quantidade * valor_unitario }).eq('id', itemId)
     if (error) { alert('Erro: ' + error.message); return }
     fetchCompras()
   }
 
   const totalMes = compras.reduce((s, c) => s + (c.itens_compra?.reduce((si, i) => si + Number(i.total), 0) || 0), 0)
-
   const resumoProdutos = compras.flatMap(c => c.itens_compra || []).reduce((acc, it) => {
     const key = `${it.produto}__${it.apresentacao}`
     if (!acc[key]) acc[key] = { produto: it.produto, apresentacao: it.apresentacao, quantidade: 0, total: 0 }
-    acc[key].quantidade += Number(it.quantidade)
-    acc[key].total += Number(it.total)
+    acc[key].quantidade += Number(it.quantidade); acc[key].total += Number(it.total)
     return acc
   }, {} as Record<string, { produto: string; apresentacao: string; quantidade: number; total: number }>)
-
   const resumoLista = Object.values(resumoProdutos).sort((a, b) => b.total - a.total)
 
   return (
@@ -161,17 +126,17 @@ export default function ComprasPage() {
           <h1 className="text-2xl font-bold text-gray-800">Compras</h1>
         </div>
         <div className="flex items-center gap-3">
+          <MonthNav mes={mes} onChange={setMes} />
           <button onClick={() => setVerResumo(!verResumo)}
             className={`flex items-center gap-2 text-sm border rounded-lg px-3 py-2 transition-colors ${verResumo ? 'bg-amber-700 text-white border-amber-700' : 'border-gray-300 hover:bg-gray-50'}`}>
-            <BarChart2 className="w-4 h-4" /> Resumo do mês
+            <BarChart2 className="w-4 h-4" /> Resumo
           </button>
-          <button
-            onClick={() => exportToCsv('compras', compras.flatMap(c => (c.itens_compra || []).map(i => ({ Data: c.data, Fornecedor: c.fornecedor, Produto: i.produto, Quantidade: i.quantidade, Apresentação: i.apresentacao, 'Valor Unit.': i.valor_unitario, Total: i.total }))))}
+          <button onClick={() => exportToCsv('compras', compras.flatMap(c => (c.itens_compra || []).map(i => ({ Data: c.data, Fornecedor: c.fornecedor, Produto: i.produto, Quantidade: i.quantidade, Apresentação: i.apresentacao, 'Valor Unit.': i.valor_unitario, Total: i.total }))))}
             className="flex items-center gap-2 text-sm border border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors">
-            <Download className="w-4 h-4" /> Exportar CSV
+            <Download className="w-4 h-4" /> CSV
           </button>
           <div className="bg-white border rounded-xl px-4 py-2 text-sm">
-            <span className="text-gray-500">Total do mês:</span>
+            <span className="text-gray-500">Total:</span>
             <span className="font-bold text-gray-800 ml-2">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
           </div>
         </div>
@@ -180,20 +145,12 @@ export default function ComprasPage() {
       {verResumo && (
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
           <div className="p-4 border-b bg-amber-50">
-            <h2 className="font-semibold text-amber-900 flex items-center gap-2">
-              <BarChart2 className="w-4 h-4" /> Resumo de compras — {format(new Date(), 'MMMM yyyy', { locale: ptBR })}
-            </h2>
+            <h2 className="font-semibold text-amber-900 flex items-center gap-2"><BarChart2 className="w-4 h-4" /> Resumo — {format(mes, 'MMMM yyyy', { locale: ptBR })}</h2>
             <p className="text-xs text-amber-700 mt-1">Total gasto: <strong>R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> em {compras.length} compra(s)</p>
           </div>
-          {resumoLista.length === 0 ? (
-            <p className="text-center text-gray-400 py-6 text-sm">Nenhuma compra este mês</p>
-          ) : (
+          {resumoLista.length === 0 ? <p className="text-center text-gray-400 py-6 text-sm">Nenhuma compra</p> : (
             <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>{['Produto', 'Qtd total', 'Unidade', 'Total gasto'].map(h => (
-                  <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500">{h}</th>
-                ))}</tr>
-              </thead>
+              <thead className="bg-gray-50"><tr>{['Produto', 'Qtd total', 'Unidade', 'Total gasto'].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500">{h}</th>)}</tr></thead>
               <tbody className="divide-y">
                 {resumoLista.map(r => (
                   <tr key={r.produto + r.apresentacao} className="hover:bg-gray-50">
@@ -220,31 +177,27 @@ export default function ComprasPage() {
             </div>
             <div>
               <label className="text-xs font-medium text-gray-600">Fornecedor</label>
-              <input value={form.fornecedor} onChange={e => setForm({ ...form, fornecedor: e.target.value })}
-                placeholder="Nome do fornecedor" required
+              <input value={form.fornecedor} onChange={e => setForm({ ...form, fornecedor: e.target.value })} placeholder="Nome do fornecedor" required
                 className="w-full border rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-amber-500" />
             </div>
           </div>
           <div className="space-y-2">
             <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-1">
-              <div className="col-span-4">Produto</div>
-              <div className="col-span-2">Quantidade</div>
-              <div className="col-span-2">Unidade</div>
-              <div className="col-span-2">Valor unit.</div>
-              <div className="col-span-2">Total</div>
+              <div className="col-span-4">Produto</div><div className="col-span-2">Quantidade</div>
+              <div className="col-span-2">Unidade</div><div className="col-span-2">Valor unit.</div><div className="col-span-2">Total</div>
             </div>
             {itens.map((item, i) => {
               const total = parseFloat(item.quantidade || '0') * parseFloat(item.valor_unitario || '0')
               return (
                 <div key={i} className="grid grid-cols-12 gap-2 items-center">
                   <div className="col-span-4">
-                    <input value={item.produto} onChange={e => updateItem(i, 'produto', e.target.value)}
+                    <input list="produtos-compra" value={item.produto} onChange={e => updateItem(i, 'produto', e.target.value)}
                       placeholder="Ex: Farinha de trigo" required
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                    <datalist id="produtos-compra">{produtos.map(p => <option key={p} value={p} />)}</datalist>
                   </div>
                   <div className="col-span-2">
-                    <input type="number" step="0.001" value={item.quantidade} onChange={e => updateItem(i, 'quantidade', e.target.value)}
-                      placeholder="0" required
+                    <input type="number" step="0.001" value={item.quantidade} onChange={e => updateItem(i, 'quantidade', e.target.value)} placeholder="0" required
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
                   </div>
                   <div className="col-span-2">
@@ -254,17 +207,12 @@ export default function ComprasPage() {
                     </select>
                   </div>
                   <div className="col-span-2">
-                    <input type="number" step="0.01" value={item.valor_unitario} onChange={e => updateItem(i, 'valor_unitario', e.target.value)}
-                      placeholder="0,00" required
+                    <input type="number" step="0.01" value={item.valor_unitario} onChange={e => updateItem(i, 'valor_unitario', e.target.value)} placeholder="0,00" required
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
                   </div>
                   <div className="col-span-1 text-sm font-medium text-gray-700">R$ {total.toFixed(2)}</div>
                   <div className="col-span-1 flex justify-center">
-                    {itens.length > 1 && (
-                      <button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
+                    {itens.length > 1 && <button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>}
                   </div>
                 </div>
               )
@@ -275,12 +223,9 @@ export default function ComprasPage() {
           </div>
           <div className="flex items-center justify-between pt-2 border-t">
             <div className="text-sm font-medium text-gray-700">
-              Total da compra: <span className="text-amber-700 font-bold">
-                R$ {itens.reduce((s, it) => s + parseFloat(it.quantidade || '0') * parseFloat(it.valor_unitario || '0'), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </span>
+              Total: <span className="text-amber-700 font-bold">R$ {itens.reduce((s, it) => s + parseFloat(it.quantidade || '0') * parseFloat(it.valor_unitario || '0'), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
             </div>
-            <button type="submit" disabled={loading}
-              className="bg-amber-700 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-amber-800 transition-colors disabled:opacity-50">
+            <button type="submit" disabled={loading} className="bg-amber-700 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-amber-800 transition-colors disabled:opacity-50">
               {loading ? 'Salvando...' : 'Salvar compra'}
             </button>
           </div>
@@ -288,10 +233,8 @@ export default function ComprasPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="p-4 border-b"><h2 className="font-semibold text-gray-800">Histórico do mês</h2></div>
-        {compras.length === 0 ? (
-          <p className="text-center text-gray-400 py-8 text-sm">Nenhuma compra registrada este mês</p>
-        ) : (
+        <div className="p-4 border-b"><h2 className="font-semibold text-gray-800">Histórico</h2></div>
+        {compras.length === 0 ? <p className="text-center text-gray-400 py-8 text-sm">Nenhuma compra neste mês</p> : (
           <div className="divide-y">
             {compras.map(c => {
               const totalCompra = c.itens_compra?.reduce((s, i) => s + Number(i.total), 0) || 0
@@ -304,9 +247,7 @@ export default function ComprasPage() {
                       className="flex-1 p-4 flex justify-between items-center hover:bg-gray-50 transition-colors text-left">
                       <div>
                         <span className="font-medium text-gray-800">{c.fornecedor}</span>
-                        <span className="text-gray-400 text-sm ml-3">
-                          {format(new Date(c.data + 'T12:00:00'), "dd 'de' MMMM", { locale: ptBR })}
-                        </span>
+                        <span className="text-gray-400 text-sm ml-3">{format(new Date(c.data + 'T12:00:00'), "dd 'de' MMMM", { locale: ptBR })}</span>
                         <span className="text-gray-400 text-xs ml-2">({c.itens_compra?.length || 0} item(s))</span>
                       </div>
                       <div className="flex items-center gap-3">
@@ -314,59 +255,39 @@ export default function ComprasPage() {
                         {aberto ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                       </div>
                     </button>
-                    <button onClick={() => deletarCompra(c.id)} title="Apagar compra"
-                      className="px-4 text-gray-300 hover:text-red-500 transition-colors">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <button onClick={() => deletarCompra(c.id)} className="px-4 text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                   </div>
                   {aberto && (
                     <div className="px-4 pb-4 bg-gray-50 border-t">
                       <table className="w-full text-sm mt-3">
-                        <thead>
-                          <tr className="text-xs text-gray-500">
-                            <th className="text-left pb-2">Produto</th>
-                            <th className="text-left pb-2">Quantidade</th>
-                            <th className="text-left pb-2">Valor unit.</th>
-                            <th className="text-right pb-2">Total</th>
-                            <th className="pb-2"></th>
-                          </tr>
-                        </thead>
+                        <thead><tr className="text-xs text-gray-500">
+                          <th className="text-left pb-2">Produto</th><th className="text-left pb-2">Quantidade</th>
+                          <th className="text-left pb-2">Valor unit.</th><th className="text-right pb-2">Total</th><th className="pb-2"></th>
+                        </tr></thead>
                         <tbody className="divide-y divide-gray-200">
                           {itensEd.map(it => (
                             <tr key={it.id}>
                               {it.editando ? (
                                 <>
                                   <td className="py-2 pr-2">
-                                    <input value={it._produto} onChange={e => atualizarCampoItem(c.id, it.id, '_produto', e.target.value)}
+                                    <input list="produtos-compra-edit" value={it._produto} onChange={e => atualizarCampoItem(c.id, it.id, '_produto', e.target.value)}
                                       className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                                    <datalist id="produtos-compra-edit">{produtos.map(p => <option key={p} value={p} />)}</datalist>
                                   </td>
                                   <td className="py-2 pr-2">
                                     <div className="flex gap-1">
-                                      <input type="number" step="0.001" value={it._quantidade} onChange={e => atualizarCampoItem(c.id, it.id, '_quantidade', e.target.value)}
-                                        className="w-20 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
-                                      <select value={it._apresentacao} onChange={e => atualizarCampoItem(c.id, it.id, '_apresentacao', e.target.value)}
-                                        className="border rounded px-1 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500">
+                                      <input type="number" step="0.001" value={it._quantidade} onChange={e => atualizarCampoItem(c.id, it.id, '_quantidade', e.target.value)} className="w-20 border rounded px-2 py-1 text-sm focus:outline-none" />
+                                      <select value={it._apresentacao} onChange={e => atualizarCampoItem(c.id, it.id, '_apresentacao', e.target.value)} className="border rounded px-1 py-1 text-sm">
                                         {apresentacoes.map(a => <option key={a}>{a}</option>)}
                                       </select>
                                     </div>
                                   </td>
-                                  <td className="py-2 pr-2">
-                                    <input type="number" step="0.01" value={it._valor_unitario} onChange={e => atualizarCampoItem(c.id, it.id, '_valor_unitario', e.target.value)}
-                                      className="w-24 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
-                                  </td>
-                                  <td className="py-2 text-right font-semibold">
-                                    R$ {(parseFloat(it._quantidade || '0') * parseFloat(it._valor_unitario || '0')).toFixed(2)}
-                                  </td>
-                                  <td className="py-2 pl-2">
-                                    <div className="flex gap-1">
-                                      <button onClick={() => salvarEdicaoItem(c.id, it.id)} className="text-green-600 hover:text-green-700">
-                                        <Check className="w-4 h-4" />
-                                      </button>
-                                      <button onClick={() => cancelarEdicaoItem(c.id, it.id)} className="text-gray-400 hover:text-gray-600">
-                                        <X className="w-4 h-4" />
-                                      </button>
-                                    </div>
-                                  </td>
+                                  <td className="py-2 pr-2"><input type="number" step="0.01" value={it._valor_unitario} onChange={e => atualizarCampoItem(c.id, it.id, '_valor_unitario', e.target.value)} className="w-24 border rounded px-2 py-1 text-sm focus:outline-none" /></td>
+                                  <td className="py-2 text-right font-semibold">R$ {(parseFloat(it._quantidade || '0') * parseFloat(it._valor_unitario || '0')).toFixed(2)}</td>
+                                  <td className="py-2 pl-2"><div className="flex gap-1">
+                                    <button onClick={() => salvarEdicaoItem(c.id, it.id)} className="text-green-600 hover:text-green-700"><Check className="w-4 h-4" /></button>
+                                    <button onClick={() => cancelarEdicaoItem(c.id, it.id)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                                  </div></td>
                                 </>
                               ) : (
                                 <>
@@ -374,28 +295,20 @@ export default function ComprasPage() {
                                   <td className="py-2 text-gray-600">{it.quantidade} {it.apresentacao}</td>
                                   <td className="py-2 text-gray-600">R$ {Number(it.valor_unitario).toFixed(2)}</td>
                                   <td className="py-2 text-right font-semibold">R$ {Number(it.total).toFixed(2)}</td>
-                                  <td className="py-2 pl-2">
-                                    <div className="flex gap-1">
-                                      <button onClick={() => iniciarEdicaoItem(c.id, it.id)} className="text-gray-400 hover:text-amber-600">
-                                        <Pencil className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button onClick={() => deletarItem(c.id, it.id)} className="text-gray-400 hover:text-red-500">
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </td>
+                                  <td className="py-2 pl-2"><div className="flex gap-1">
+                                    <button onClick={() => iniciarEdicaoItem(c.id, it.id)} className="text-gray-400 hover:text-amber-600"><Pencil className="w-3.5 h-3.5" /></button>
+                                    <button onClick={() => deletarItem(it.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                                  </div></td>
                                 </>
                               )}
                             </tr>
                           ))}
                         </tbody>
-                        <tfoot>
-                          <tr className="border-t border-gray-300">
-                            <td colSpan={3} className="pt-2 text-xs text-gray-500 font-medium">Total da compra</td>
-                            <td className="pt-2 text-right font-bold text-amber-700">R$ {totalCompra.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                            <td></td>
-                          </tr>
-                        </tfoot>
+                        <tfoot><tr className="border-t border-gray-300">
+                          <td colSpan={3} className="pt-2 text-xs text-gray-500 font-medium">Total da compra</td>
+                          <td className="pt-2 text-right font-bold text-amber-700">R$ {totalCompra.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                          <td></td>
+                        </tr></tfoot>
                       </table>
                     </div>
                   )}
