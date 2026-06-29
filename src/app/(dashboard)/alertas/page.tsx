@@ -13,7 +13,7 @@ export default function AlertasPage() {
   const [estoques, setEstoques] = useState<EstoqueMinimo[]>([])
   const [meta, setMeta] = useState<Meta | null>(null)
   const [totalVendas, setTotalVendas] = useState(0)
-  const [totalCompras, setTotalCompras] = useState(0)
+  const [totalCompras] = useState(0)
   const [taxaDesperdicio, setTaxaDesperdicio] = useState(0)
   const [formEstoque, setFormEstoque] = useState({ produto: '', quantidade_minima: '', quantidade_atual: '' })
 
