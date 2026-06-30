@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { BookOpen, Plus, Trash2, ChevronDown, ChevronUp, Calculator } from 'lucide-react'
+import { BookOpen, Plus, Trash2, ChevronDown, ChevronUp, Calculator, Info } from 'lucide-react'
+import { format, startOfMonth, endOfMonth } from 'date-fns'
 
 interface Ingrediente {
   id?: string
@@ -28,6 +29,14 @@ export default function ReceitasPage() {
   const [receitas, setReceitas] = useState<Receita[]>([])
   const [expandido, setExpandido] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
+
+  // Custos fixos e produção do mês
+  const [totalCustosFixos, setTotalCustosFixos] = useState(0)
+  const [totalProducaoMes, setTotalProducaoMes] = useState(0)
+  const [estimativaProducao, setEstimativaProducao] = useState('')
+  const [usandoEstimativa, setUsandoEstimativa] = useState(false)
+
+  // Formulário
   const [nome, setNome] = useState('')
   const [rendimento, setRendimento] = useState('')
   const [unidadeRendimento, setUnidadeRendimento] = useState('un')
@@ -37,11 +46,27 @@ export default function ReceitasPage() {
   ])
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => { fetchReceitas() }, [])
+  useEffect(() => { fetchTudo() }, [])
 
-  async function fetchReceitas() {
-    const { data } = await supabase.from('receitas').select('*, ingredientes_receita(*)').order('nome')
-    setReceitas(data || [])
+  async function fetchTudo() {
+    const mesAtual = format(new Date(), 'yyyy-MM')
+    const inicio = startOfMonth(new Date()).toISOString().split('T')[0]
+    const fim = endOfMonth(new Date()).toISOString().split('T')[0]
+
+    const [{ data: rec }, { data: cf }, { data: prod }] = await Promise.all([
+      supabase.from('receitas').select('*, ingredientes_receita(*)').order('nome'),
+      supabase.from('custos_fixos').select('valor').eq('mes_referencia', mesAtual),
+      supabase.from('producao').select('produzido').gte('data', inicio).lte('data', fim),
+    ])
+
+    setReceitas(rec || [])
+
+    const totalCF = (cf || []).reduce((s, c) => s + Number(c.valor), 0)
+    setTotalCustosFixos(totalCF)
+
+    const totalProd = (prod || []).reduce((s, p) => s + Number(p.produzido), 0)
+    setTotalProducaoMes(totalProd)
+    setUsandoEstimativa(totalProd === 0)
   }
 
   function addIngrediente() {
@@ -80,47 +105,107 @@ export default function ReceitasPage() {
     setIngredientes([{ produto: '', quantidade: 0, unidade: 'kg', custo_unitario: 0 }])
     setShowForm(false)
     setLoading(false)
-    fetchReceitas()
+    fetchTudo()
   }
 
   async function deleteReceita(id: string) {
     if (!confirm('Excluir esta receita?')) return
     await supabase.from('ingredientes_receita').delete().eq('receita_id', id)
     await supabase.from('receitas').delete().eq('id', id)
-    fetchReceitas()
+    fetchTudo()
   }
 
-  function calcularCustoTotal(ings: Ingrediente[]) {
+  function calcularCustoIngredientes(ings: Ingrediente[]) {
     return ings.reduce((s, i) => s + Number(i.quantidade) * Number(i.custo_unitario), 0)
   }
 
-  function calcularPrecoSugerido(custoTotal: number, rendimento: number, margem: number) {
+  function calcularPrecoSugerido(custoIngredientes: number, rendimento: number, margem: number, custosFixosRateio: number) {
     if (rendimento <= 0) return 0
-    const custoUnitario = custoTotal / rendimento
-    return custoUnitario / (1 - margem / 100)
+    const custoUnitarioIngr = custoIngredientes / rendimento
+    const custoUnitarioTotal = custoUnitarioIngr + custosFixosRateio
+    return custoUnitarioTotal / (1 - margem / 100)
   }
 
-  const fmt = (v: number) => `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+  // Produção de base para o rateio
+  const producaoBase = usandoEstimativa ? (parseFloat(estimativaProducao) || 0) : totalProducaoMes
+  const custosFixosPorUnidade = producaoBase > 0 ? totalCustosFixos / producaoBase : 0
 
-  // Custo prévia no formulário
-  const custoFormulario = calcularCustoTotal(ingredientes)
+  const fmt = (v: number) => `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+  const fmtCentavos = (v: number) => v < 1 ? `R$ ${v.toFixed(4)}` : fmt(v)
+
+  // Prévia no formulário
+  const custoFormulario = calcularCustoIngredientes(ingredientes)
   const rendimentoNum = parseFloat(rendimento) || 0
-  const precoSugerido = calcularPrecoSugerido(custoFormulario, rendimentoNum, parseFloat(margem) || 60)
+  const precoSugerido = calcularPrecoSugerido(custoFormulario, rendimentoNum, parseFloat(margem) || 60, custosFixosPorUnidade)
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <BookOpen className="w-6 h-6 text-amber-700" />
           <div>
             <h1 className="text-2xl font-bold text-gray-800">Receitas e Precificação</h1>
-            <p className="text-sm text-gray-400">Cadastre suas receitas e descubra o preço justo de venda</p>
+            <p className="text-sm text-gray-400">Preço calculado com ingredientes + rateio dos custos fixos</p>
           </div>
         </div>
         <button onClick={() => setShowForm(!showForm)}
           className="bg-amber-700 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-800 flex items-center gap-2">
           <Plus className="w-4 h-4" /> Nova receita
         </button>
+      </div>
+
+      {/* Painel de rateio de custos fixos */}
+      <div className="bg-white rounded-xl p-5 shadow-sm border">
+        <div className="flex items-center gap-2 mb-3">
+          <Calculator className="w-4 h-4 text-amber-700" />
+          <h2 className="font-semibold text-gray-800 text-sm">Base para rateio dos custos fixos</h2>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-xs text-gray-500">Custos fixos do mês atual</p>
+            <p className="font-bold text-gray-800">{fmt(totalCustosFixos)}</p>
+            {totalCustosFixos === 0 && <p className="text-xs text-orange-500 mt-0.5">Adicione custos no Balanço</p>}
+          </div>
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-xs text-gray-500">
+              {usandoEstimativa ? 'Estimativa de produção/mês' : 'Unidades produzidas no mês'}
+            </p>
+            <p className="font-bold text-gray-800">
+              {usandoEstimativa ? (parseFloat(estimativaProducao) || 0).toLocaleString('pt-BR') : totalProducaoMes.toLocaleString('pt-BR')} un
+            </p>
+          </div>
+        </div>
+
+        {usandoEstimativa && (
+          <div className="mb-4">
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+              <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">
+                Ainda não há produção lançada neste mês. Informe uma estimativa de quantas unidades você produz por mês para calcular o rateio dos custos fixos.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={estimativaProducao}
+                onChange={e => setEstimativaProducao(e.target.value)}
+                placeholder="Ex: 3000 (unidades por mês)"
+                className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className={`rounded-lg p-3 text-center ${custosFixosPorUnidade > 0 ? 'bg-blue-50' : 'bg-gray-50'}`}>
+          <p className="text-xs text-gray-500">Custo fixo rateado por unidade produzida</p>
+          <p className={`text-lg font-bold ${custosFixosPorUnidade > 0 ? 'text-blue-700' : 'text-gray-400'}`}>
+            {custosFixosPorUnidade > 0 ? fmtCentavos(custosFixosPorUnidade) : '—'}
+          </p>
+          {custosFixosPorUnidade > 0 && (
+            <p className="text-xs text-gray-400 mt-0.5">Este valor é somado ao custo dos ingredientes em cada receita</p>
+          )}
+        </div>
       </div>
 
       {/* Formulário de nova receita */}
@@ -147,7 +232,9 @@ export default function ReceitasPage() {
                 </select>
               </div>
               <div className="col-span-2">
-                <label className="text-sm font-medium text-gray-700">Margem de lucro desejada: <span className="text-amber-700 font-bold">{margem}%</span></label>
+                <label className="text-sm font-medium text-gray-700">
+                  Margem de lucro desejada: <span className="text-amber-700 font-bold">{margem}%</span>
+                </label>
                 <input type="range" min="10" max="90" step="5" value={margem} onChange={e => setMargem(e.target.value)}
                   className="w-full mt-1 accent-amber-700" />
                 <div className="flex justify-between text-xs text-gray-400 mt-0.5"><span>10%</span><span>90%</span></div>
@@ -159,7 +246,7 @@ export default function ReceitasPage() {
                 <label className="text-sm font-medium text-gray-700">Ingredientes</label>
                 <button type="button" onClick={addIngrediente}
                   className="text-xs text-amber-700 hover:underline flex items-center gap-1">
-                  <Plus className="w-3 h-3" /> Adicionar ingrediente
+                  <Plus className="w-3 h-3" /> Adicionar
                 </button>
               </div>
               <div className="space-y-2">
@@ -186,14 +273,27 @@ export default function ReceitasPage() {
             {/* Prévia do preço */}
             {custoFormulario > 0 && rendimentoNum > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-3">
                   <Calculator className="w-4 h-4 text-amber-700" />
-                  <span className="font-medium text-amber-800 text-sm">Prévia do preço</span>
+                  <span className="font-medium text-amber-800 text-sm">Prévia do preço sugerido</span>
                 </div>
-                <div className="grid grid-cols-3 gap-3 text-sm">
-                  <div><p className="text-xs text-gray-500">Custo total</p><p className="font-bold text-gray-800">{fmt(custoFormulario)}</p></div>
-                  <div><p className="text-xs text-gray-500">Custo/unidade</p><p className="font-bold text-gray-800">{fmt(custoFormulario / rendimentoNum)}</p></div>
-                  <div><p className="text-xs text-gray-500">Preço sugerido</p><p className="font-bold text-green-700 text-base">{fmt(precoSugerido)}</p></div>
+                <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+                  <div className="bg-white rounded-lg p-2 text-center">
+                    <p className="text-xs text-gray-500">Ingredientes</p>
+                    <p className="font-bold text-gray-800">{fmt(custoFormulario)}</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 text-center">
+                    <p className="text-xs text-gray-500">Custo fixo rateado</p>
+                    <p className="font-bold text-blue-700">{fmt(custosFixosPorUnidade * rendimentoNum)}</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 text-center">
+                    <p className="text-xs text-gray-500">Custo total/lote</p>
+                    <p className="font-bold text-gray-800">{fmt(custoFormulario + custosFixosPorUnidade * rendimentoNum)}</p>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-2 text-center border border-green-200">
+                    <p className="text-xs text-gray-500">Preço sugerido/un</p>
+                    <p className="font-bold text-green-700 text-base">{fmt(precoSugerido)}</p>
+                  </div>
                 </div>
               </div>
             )}
@@ -212,7 +312,6 @@ export default function ReceitasPage() {
         </div>
       )}
 
-      {/* Lista de receitas */}
       {receitas.length === 0 && !showForm && (
         <div className="text-center py-16 text-gray-400">
           <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
@@ -221,10 +320,13 @@ export default function ReceitasPage() {
         </div>
       )}
 
+      {/* Lista de receitas */}
       <div className="space-y-3">
         {receitas.map(rec => {
-          const custoTotal = calcularCustoTotal(rec.ingredientes_receita)
-          const precoSug = calcularPrecoSugerido(custoTotal, rec.rendimento, rec.margem_pct)
+          const custoIngr = calcularCustoIngredientes(rec.ingredientes_receita)
+          const custoFixoLote = custosFixosPorUnidade * rec.rendimento
+          const custoTotal = custoIngr + custoFixoLote
+          const precoSug = calcularPrecoSugerido(custoIngr, rec.rendimento, rec.margem_pct, custosFixosPorUnidade)
           const custoUn = rec.rendimento > 0 ? custoTotal / rec.rendimento : 0
           const aberto = expandido === rec.id
 
@@ -247,23 +349,25 @@ export default function ReceitasPage() {
 
               {aberto && (
                 <div className="border-t px-4 pb-4 pt-3 space-y-4">
-                  {/* Cards de custo */}
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                     <div className="bg-gray-50 rounded-lg p-3 text-center">
-                      <p className="text-xs text-gray-500">Custo total</p>
-                      <p className="font-bold text-gray-800">{fmt(custoTotal)}</p>
+                      <p className="text-xs text-gray-500">Ingredientes</p>
+                      <p className="font-bold text-gray-800">{fmt(custoIngr)}</p>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-3 text-center">
+                      <p className="text-xs text-gray-500">Custos fixos rateados</p>
+                      <p className="font-bold text-blue-700">{fmt(custoFixoLote)}</p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3 text-center">
-                      <p className="text-xs text-gray-500">Custo/unidade</p>
-                      <p className="font-bold text-gray-800">{fmt(custoUn)}</p>
+                      <p className="text-xs text-gray-500">Custo/unidade (total)</p>
+                      <p className="font-bold text-gray-800">{fmtCentavos(custoUn)}</p>
                     </div>
-                    <div className="bg-green-50 rounded-lg p-3 text-center">
+                    <div className="bg-green-50 rounded-lg p-3 text-center border border-green-200">
                       <p className="text-xs text-gray-500">Preço sugerido</p>
                       <p className="font-bold text-green-700">{fmt(precoSug)}</p>
                     </div>
                   </div>
 
-                  {/* Ingredientes */}
                   {rec.ingredientes_receita.length > 0 && (
                     <div>
                       <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Ingredientes</p>
@@ -279,7 +383,7 @@ export default function ReceitasPage() {
                   )}
 
                   <button onClick={() => deleteReceita(rec.id)}
-                    className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 mt-1">
+                    className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1">
                     <Trash2 className="w-3 h-3" /> Excluir receita
                   </button>
                 </div>
