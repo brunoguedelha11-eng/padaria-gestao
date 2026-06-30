@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { TrendingUp, Package, Recycle, BarChart3, ChefHat, AlertTriangle } from 'lucide-react'
+import { TrendingUp, Package, Recycle, BarChart3, ChefHat, AlertTriangle, MessageCircle, Copy, Check } from 'lucide-react'
 import Link from 'next/link'
 
 const hoje = format(new Date(), 'yyyy-MM-dd')
@@ -52,6 +52,33 @@ export default function DashboardPage() {
     const totalCV = custosVarData?.reduce((s, c) => s + c.valor, 0) || 0
     setCustosMes(totalCF + totalCV)
     setLoading(false)
+  }
+
+  const [copiado, setCopiado] = useState(false)
+
+  function gerarResumoWhatsApp() {
+    const diaNomeFull = format(new Date(), "EEEE, dd/MM/yyyy", { locale: ptBR })
+    const linhasProd = producaoHoje.map(p => {
+      const taxa = p.produzido > 0 ? ((p.descartado / p.produzido) * 100).toFixed(1) : '0'
+      return `  • ${p.produto}: ${p.produzido} produzidos, ${p.descartado} descartados (${taxa}%)`
+    }).join('\n')
+
+    const texto = `📊 *Resumo do dia — ${diaNomeFull}*
+
+💰 *Vendas hoje:* ${fmt(vendaHoje)}
+📈 *Vendas no mês:* ${fmt(vendasMes)}${metaVendas > 0 ? ` (${((vendasMes / metaVendas) * 100).toFixed(0)}% da meta)` : ''}
+🛒 *Compras no mês:* ${fmt(comprasMes)}
+📉 *Custos no mês:* ${fmt(custosMes)}
+✅ *Resultado estimado:* ${fmt(lucroEstimado)}
+
+🍞 *Produção de hoje:*
+${linhasProd || '  Nenhuma produção lançada'}
+
+_Gerado pela Gestão Padaria_`
+
+    navigator.clipboard.writeText(texto)
+    setCopiado(true)
+    setTimeout(() => setCopiado(false), 3000)
   }
 
   const progressoMeta = metaVendas > 0 ? Math.min((vendasMes / metaVendas) * 100, 100) : 0
@@ -148,6 +175,14 @@ export default function DashboardPage() {
           <Link href="/vendas" className="text-xs text-amber-700 hover:underline mt-1 inline-block">Ver vendas →</Link>
         </div>
       </div>
+
+      {/* Botão WhatsApp */}
+      <button onClick={gerarResumoWhatsApp}
+        className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-all border ${
+          copiado ? 'bg-green-50 border-green-300 text-green-700' : 'bg-white border-gray-200 text-gray-700 hover:bg-green-50 hover:border-green-300 hover:text-green-700'
+        }`}>
+        {copiado ? <><Check className="w-4 h-4" /> Copiado! Cole no WhatsApp</> : <><MessageCircle className="w-4 h-4 text-green-600" /> Copiar resumo do dia para WhatsApp</>}
+      </button>
 
       {/* Produção de hoje */}
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
