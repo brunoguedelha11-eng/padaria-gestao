@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 import { Download, FileSpreadsheet, FileText, Loader2 } from 'lucide-react'
 import MonthNav from '@/components/MonthNav'
 import { exportToExcel } from '@/lib/exportExcel'
@@ -91,7 +92,7 @@ export default function ExportarPage() {
   async function handlePdf() {
     setLoading('pdf')
     const { vendas, compras, custosFixos, custosVar, gastosPessoais, producao } = await fetchTudo()
-    const periodo = format(mes, 'MMMM \'de\' yyyy', { locale: require('date-fns/locale/pt-BR').ptBR })
+    const periodo = format(mes, "MMMM 'de' yyyy", { locale: ptBR })
 
     const totalVendas = (vendas || []).reduce((s: number, v: any) => s + v.total, 0)
     const totalCompras = (compras || []).reduce((s: number, c: any) => s + (c.itens_compra || []).reduce((si: number, i: any) => si + Number(i.total), 0), 0)
