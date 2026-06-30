@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   ShoppingCart, Package, BarChart3, Recycle,
-  TrendingUp, Bot, Bell, LogOut, ChefHat, LayoutDashboard, BookOpen
+  TrendingUp, Bot, Bell, LogOut, ChefHat, LayoutDashboard, BookOpen, Download
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -19,6 +19,7 @@ const navItems = [
   { href: '/relatorios', label: 'Relatórios', icon: TrendingUp },
   { href: '/assistente', label: 'Assistente IA', icon: Bot },
   { href: '/alertas', label: 'Alertas', icon: Bell },
+  { href: '/exportar', label: 'Exportar Dados', icon: Download },
 ]
 
 export default function Sidebar() {

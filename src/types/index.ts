@@ -26,6 +26,9 @@ export interface Compra {
   data: string
   fornecedor: string
   user_id: string
+  forma_pagamento: 'debito' | 'pix' | 'credito' | 'boleto'
+  data_vencimento?: string
+  pago: boolean
   itens?: ItemCompra[]
 }
 

@@ -3,22 +3,32 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { ItemCompra } from '@/types'
-import { format, startOfMonth, endOfMonth } from 'date-fns'
+import { format, startOfMonth, endOfMonth, addDays } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Plus, Package, Trash2, Download, ChevronDown, ChevronUp, BarChart2, Pencil, Check, X } from 'lucide-react'
+import { Plus, Package, Trash2, Download, ChevronDown, ChevronUp, BarChart2, Pencil, Check, X, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { exportToCsv } from '@/lib/exportCsv'
 import MonthNav from '@/components/MonthNav'
 
 const apresentacoes = ['kg', 'g', 'L', 'mL', 'un', 'cx', 'pct'] as const
 const hoje = format(new Date(), 'yyyy-MM-dd')
+const PAGAMENTOS = [
+  { value: 'debito', label: 'Débito', imediato: true },
+  { value: 'pix', label: 'Pix', imediato: true },
+  { value: 'credito', label: 'Crédito', imediato: false },
+  { value: 'boleto', label: 'Boleto (7 dias)', imediato: false },
+]
 
 interface CompraComItens {
-  id: string; data: string; fornecedor: string; user_id: string; itens_compra: ItemCompra[]
+  id: string; data: string; fornecedor: string; user_id: string
+  forma_pagamento: string; data_vencimento?: string; pago: boolean
+  itens_compra: ItemCompra[]
 }
 
 interface ItemEditavel extends ItemCompra {
   editando?: boolean; _quantidade?: string; _valor_unitario?: string; _produto?: string; _apresentacao?: string
 }
+
+const formVazio = { data: hoje, fornecedor: '', forma_pagamento: 'debito', data_vencimento: '' }
 
 export default function ComprasPage() {
   const supabase = createClient()
@@ -27,13 +37,24 @@ export default function ComprasPage() {
   const [expandido, setExpandido] = useState<string | null>(null)
   const [verResumo, setVerResumo] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ data: hoje, fornecedor: '' })
+  const [form, setForm] = useState(formVazio)
   const [itens, setItens] = useState([{ produto: '', quantidade: '', apresentacao: 'un', valor_unitario: '' }])
   const [itensEditaveis, setItensEditaveis] = useState<Record<string, ItemEditavel[]>>({})
   const [produtos, setProdutos] = useState<string[]>([])
 
   useEffect(() => { fetchCompras() }, [mes])
   useEffect(() => { fetchProdutos() }, [])
+
+  // Calcula vencimento automático ao mudar pagamento ou data
+  useEffect(() => {
+    if (form.forma_pagamento === 'credito') {
+      setForm(f => ({ ...f, data_vencimento: format(addDays(new Date(f.data + 'T12:00:00'), 30), 'yyyy-MM-dd') }))
+    } else if (form.forma_pagamento === 'boleto') {
+      setForm(f => ({ ...f, data_vencimento: format(addDays(new Date(f.data + 'T12:00:00'), 7), 'yyyy-MM-dd') }))
+    } else {
+      setForm(f => ({ ...f, data_vencimento: '' }))
+    }
+  }, [form.forma_pagamento, form.data])
 
   async function fetchProdutos() {
     const { data } = await supabase.from('produtos').select('nome').in('categoria', ['compra', 'ambos']).order('nome')
@@ -62,16 +83,27 @@ export default function ComprasPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const { data: compra, error } = await supabase.from('compras').insert({ data: form.data, fornecedor: form.fornecedor, user_id: user?.id }).select().single()
+    const imediato = ['debito', 'pix'].includes(form.forma_pagamento)
+    const { data: compra, error } = await supabase.from('compras').insert({
+      data: form.data, fornecedor: form.fornecedor, user_id: user?.id,
+      forma_pagamento: form.forma_pagamento,
+      data_vencimento: form.data_vencimento || null,
+      pago: imediato
+    }).select().single()
     if (error) { alert('Erro: ' + error.message); setLoading(false); return }
     if (compra) {
       const itensData = itens.map(it => ({ compra_id: compra.id, produto: it.produto, quantidade: parseFloat(it.quantidade), apresentacao: it.apresentacao, valor_unitario: parseFloat(it.valor_unitario), total: parseFloat(it.quantidade) * parseFloat(it.valor_unitario) }))
       const { error: err2 } = await supabase.from('itens_compra').insert(itensData)
       if (err2) alert('Erro nos itens: ' + err2.message)
     }
-    setForm({ data: hoje, fornecedor: '' })
+    setForm(formVazio)
     setItens([{ produto: '', quantidade: '', apresentacao: 'un', valor_unitario: '' }])
     fetchCompras(); setLoading(false)
+  }
+
+  async function marcarPago(id: string) {
+    await supabase.from('compras').update({ pago: true }).eq('id', id)
+    fetchCompras()
   }
 
   async function deletarCompra(id: string) {
@@ -109,7 +141,9 @@ export default function ComprasPage() {
     fetchCompras()
   }
 
-  const totalMes = compras.reduce((s, c) => s + (c.itens_compra?.reduce((si, i) => si + Number(i.total), 0) || 0), 0)
+  const totalMes = compras.filter(c => c.pago).reduce((s, c) => s + (c.itens_compra?.reduce((si, i) => si + Number(i.total), 0) || 0), 0)
+  const totalPendente = compras.filter(c => !c.pago).reduce((s, c) => s + (c.itens_compra?.reduce((si, i) => si + Number(i.total), 0) || 0), 0)
+
   const resumoProdutos = compras.flatMap(c => c.itens_compra || []).reduce((acc, it) => {
     const key = `${it.produto}__${it.apresentacao}`
     if (!acc[key]) acc[key] = { produto: it.produto, apresentacao: it.apresentacao, quantidade: 0, total: 0 }
@@ -117,6 +151,8 @@ export default function ComprasPage() {
     return acc
   }, {} as Record<string, { produto: string; apresentacao: string; quantidade: number; total: number }>)
   const resumoLista = Object.values(resumoProdutos).sort((a, b) => b.total - a.total)
+
+  const pagamentoSelecionado = PAGAMENTOS.find(p => p.value === form.forma_pagamento)
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -131,13 +167,13 @@ export default function ComprasPage() {
             className={`flex items-center gap-2 text-sm border rounded-lg px-3 py-2 transition-colors ${verResumo ? 'bg-amber-700 text-white border-amber-700' : 'border-gray-300 hover:bg-gray-50'}`}>
             <BarChart2 className="w-4 h-4" /> Resumo
           </button>
-          <button onClick={() => exportToCsv('compras', compras.flatMap(c => (c.itens_compra || []).map(i => ({ Data: c.data, Fornecedor: c.fornecedor, Produto: i.produto, Quantidade: i.quantidade, Apresentação: i.apresentacao, 'Valor Unit.': i.valor_unitario, Total: i.total }))))}
+          <button onClick={() => exportToCsv('compras', compras.flatMap(c => (c.itens_compra || []).map(i => ({ Data: c.data, Fornecedor: c.fornecedor, Produto: i.produto, Quantidade: i.quantidade, Apresentação: i.apresentacao, 'Valor Unit.': i.valor_unitario, Total: i.total, Pagamento: c.forma_pagamento, Pago: c.pago ? 'Sim' : 'Não' }))))}
             className="flex items-center gap-2 text-sm border border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors">
             <Download className="w-4 h-4" /> CSV
           </button>
-          <div className="bg-white border rounded-xl px-4 py-2 text-sm">
-            <span className="text-gray-500">Total:</span>
-            <span className="font-bold text-gray-800 ml-2">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+          <div className="bg-white border rounded-xl px-4 py-2 text-sm space-y-0.5">
+            <div><span className="text-gray-500">Pago:</span> <span className="font-bold text-gray-800">R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+            {totalPendente > 0 && <div><span className="text-orange-500">Pendente:</span> <span className="font-bold text-orange-600">R$ {totalPendente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>}
           </div>
         </div>
       </div>
@@ -146,7 +182,7 @@ export default function ComprasPage() {
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
           <div className="p-4 border-b bg-amber-50">
             <h2 className="font-semibold text-amber-900 flex items-center gap-2"><BarChart2 className="w-4 h-4" /> Resumo — {format(mes, 'MMMM yyyy', { locale: ptBR })}</h2>
-            <p className="text-xs text-amber-700 mt-1">Total gasto: <strong>R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> em {compras.length} compra(s)</p>
+            <p className="text-xs text-amber-700 mt-1">Total pago: <strong>R$ {totalMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> em {compras.length} compra(s)</p>
           </div>
           {resumoLista.length === 0 ? <p className="text-center text-gray-400 py-6 text-sm">Nenhuma compra</p> : (
             <table className="w-full text-sm">
@@ -181,6 +217,32 @@ export default function ComprasPage() {
                 className="w-full border rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-amber-500" />
             </div>
           </div>
+
+          {/* Forma de pagamento */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-gray-600">Forma de pagamento</label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {PAGAMENTOS.map(p => (
+                  <button key={p.value} type="button" onClick={() => setForm(f => ({ ...f, forma_pagamento: p.value }))}
+                    className={`px-3 py-2 rounded-lg text-sm border transition-colors ${form.forma_pagamento === p.value ? 'bg-amber-700 text-white border-amber-700' : 'border-gray-300 hover:bg-gray-50'}`}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {!pagamentoSelecionado?.imediato && (
+              <div>
+                <label className="text-xs font-medium text-gray-600">Data de vencimento</label>
+                <input type="date" value={form.data_vencimento} onChange={e => setForm({ ...form, data_vencimento: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                <p className="text-xs text-orange-500 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> Será registrado como pagamento pendente
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="space-y-2">
             <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-1">
               <div className="col-span-4">Produto</div><div className="col-span-2">Quantidade</div>
@@ -191,8 +253,7 @@ export default function ComprasPage() {
               return (
                 <div key={i} className="grid grid-cols-12 gap-2 items-center">
                   <div className="col-span-4">
-                    <input list="produtos-compra" value={item.produto} onChange={e => updateItem(i, 'produto', e.target.value)}
-                      placeholder="Ex: Farinha de trigo" required
+                    <input list="produtos-compra" value={item.produto} onChange={e => updateItem(i, 'produto', e.target.value)} placeholder="Ex: Farinha de trigo" required
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
                     <datalist id="produtos-compra">{produtos.map(p => <option key={p} value={p} />)}</datalist>
                   </div>
@@ -224,6 +285,7 @@ export default function ComprasPage() {
           <div className="flex items-center justify-between pt-2 border-t">
             <div className="text-sm font-medium text-gray-700">
               Total: <span className="text-amber-700 font-bold">R$ {itens.reduce((s, it) => s + parseFloat(it.quantidade || '0') * parseFloat(it.valor_unitario || '0'), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+              {!pagamentoSelecionado?.imediato && <span className="text-orange-500 text-xs ml-2">(pendente até {form.data_vencimento ? format(new Date(form.data_vencimento + 'T12:00:00'), 'dd/MM/yyyy') : '...'})</span>}
             </div>
             <button type="submit" disabled={loading} className="bg-amber-700 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-amber-800 transition-colors disabled:opacity-50">
               {loading ? 'Salvando...' : 'Salvar compra'}
@@ -240,22 +302,41 @@ export default function ComprasPage() {
               const totalCompra = c.itens_compra?.reduce((s, i) => s + Number(i.total), 0) || 0
               const aberto = expandido === c.id
               const itensEd = itensEditaveis[c.id] || []
+              const vencido = !c.pago && c.data_vencimento && c.data_vencimento < hoje
               return (
                 <div key={c.id}>
-                  <div className="flex items-center">
+                  <div className={`flex items-center ${vencido ? 'bg-red-50' : ''}`}>
                     <button onClick={() => setExpandido(aberto ? null : c.id)}
                       className="flex-1 p-4 flex justify-between items-center hover:bg-gray-50 transition-colors text-left">
-                      <div>
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-gray-800">{c.fornecedor}</span>
-                        <span className="text-gray-400 text-sm ml-3">{format(new Date(c.data + 'T12:00:00'), "dd 'de' MMMM", { locale: ptBR })}</span>
-                        <span className="text-gray-400 text-xs ml-2">({c.itens_compra?.length || 0} item(s))</span>
+                        <span className="text-gray-400 text-sm">{format(new Date(c.data + 'T12:00:00'), "dd/MM", { locale: ptBR })}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${c.forma_pagamento === 'debito' ? 'bg-blue-100 text-blue-700' : c.forma_pagamento === 'pix' ? 'bg-green-100 text-green-700' : c.forma_pagamento === 'credito' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'}`}>
+                          {c.forma_pagamento}
+                        </span>
+                        {!c.pago && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${vencido ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                            {vencido ? '⚠️ Vencido' : `Vence ${c.data_vencimento ? format(new Date(c.data_vencimento + 'T12:00:00'), 'dd/MM') : ''}`}
+                          </span>
+                        )}
+                        {c.pago && ['credito', 'boleto'].includes(c.forma_pagamento) && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Pago</span>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="font-bold text-gray-800">R$ {totalCompra.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                        <span className={`font-bold ${c.pago ? 'text-gray-800' : 'text-orange-600'}`}>R$ {totalCompra.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                         {aberto ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                       </div>
                     </button>
-                    <button onClick={() => deletarCompra(c.id)} className="px-4 text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                    <div className="flex items-center gap-1 pr-3">
+                      {!c.pago && (
+                        <button onClick={() => marcarPago(c.id)} title="Marcar como pago"
+                          className="text-green-400 hover:text-green-600 transition-colors p-1">
+                          <CheckCircle2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button onClick={() => deletarCompra(c.id)} className="text-gray-300 hover:text-red-500 transition-colors p-1"><Trash2 className="w-4 h-4" /></button>
+                    </div>
                   </div>
                   {aberto && (
                     <div className="px-4 pb-4 bg-gray-50 border-t">
@@ -270,19 +351,16 @@ export default function ComprasPage() {
                               {it.editando ? (
                                 <>
                                   <td className="py-2 pr-2">
-                                    <input list="produtos-compra-edit" value={it._produto} onChange={e => atualizarCampoItem(c.id, it.id, '_produto', e.target.value)}
-                                      className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
-                                    <datalist id="produtos-compra-edit">{produtos.map(p => <option key={p} value={p} />)}</datalist>
+                                    <input list="produtos-edit" value={it._produto} onChange={e => atualizarCampoItem(c.id, it.id, '_produto', e.target.value)} className="w-full border rounded px-2 py-1 text-sm focus:outline-none" />
+                                    <datalist id="produtos-edit">{produtos.map(p => <option key={p} value={p} />)}</datalist>
                                   </td>
-                                  <td className="py-2 pr-2">
-                                    <div className="flex gap-1">
-                                      <input type="number" step="0.001" value={it._quantidade} onChange={e => atualizarCampoItem(c.id, it.id, '_quantidade', e.target.value)} className="w-20 border rounded px-2 py-1 text-sm focus:outline-none" />
-                                      <select value={it._apresentacao} onChange={e => atualizarCampoItem(c.id, it.id, '_apresentacao', e.target.value)} className="border rounded px-1 py-1 text-sm">
-                                        {apresentacoes.map(a => <option key={a}>{a}</option>)}
-                                      </select>
-                                    </div>
-                                  </td>
-                                  <td className="py-2 pr-2"><input type="number" step="0.01" value={it._valor_unitario} onChange={e => atualizarCampoItem(c.id, it.id, '_valor_unitario', e.target.value)} className="w-24 border rounded px-2 py-1 text-sm focus:outline-none" /></td>
+                                  <td className="py-2 pr-2"><div className="flex gap-1">
+                                    <input type="number" step="0.001" value={it._quantidade} onChange={e => atualizarCampoItem(c.id, it.id, '_quantidade', e.target.value)} className="w-20 border rounded px-2 py-1 text-sm" />
+                                    <select value={it._apresentacao} onChange={e => atualizarCampoItem(c.id, it.id, '_apresentacao', e.target.value)} className="border rounded px-1 py-1 text-sm">
+                                      {apresentacoes.map(a => <option key={a}>{a}</option>)}
+                                    </select>
+                                  </div></td>
+                                  <td className="py-2 pr-2"><input type="number" step="0.01" value={it._valor_unitario} onChange={e => atualizarCampoItem(c.id, it.id, '_valor_unitario', e.target.value)} className="w-24 border rounded px-2 py-1 text-sm" /></td>
                                   <td className="py-2 text-right font-semibold">R$ {(parseFloat(it._quantidade || '0') * parseFloat(it._valor_unitario || '0')).toFixed(2)}</td>
                                   <td className="py-2 pl-2"><div className="flex gap-1">
                                     <button onClick={() => salvarEdicaoItem(c.id, it.id)} className="text-green-600 hover:text-green-700"><Check className="w-4 h-4" /></button>

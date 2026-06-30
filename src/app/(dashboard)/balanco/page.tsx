@@ -36,7 +36,7 @@ export default function BalancoPage() {
       supabase.from('gastos_pessoais').select('*').gte('data', inicio).lte('data', fim),
       supabase.from('custos_variaveis').select('*').gte('data', inicio).lte('data', fim).order('data', { ascending: false }),
       supabase.from('vendas').select('total').gte('data', inicio).lte('data', fim),
-      supabase.from('itens_compra').select('total, compras(data)').gte('compras.data', inicio).lte('compras.data', fim),
+      supabase.from('itens_compra').select('total, compras!inner(data, pago)').eq('compras.pago', true).gte('compras.data', inicio).lte('compras.data', fim),
     ])
     if (cf) setCustosFixos(cf)
     if (gp) setGastosPessoais(gp)
