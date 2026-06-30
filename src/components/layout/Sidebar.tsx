@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   ShoppingCart, Package, BarChart3, Recycle,
-  TrendingUp, Bot, Bell, LogOut, ChefHat, LayoutDashboard, BookOpen, Download, Target, X, UtensilsCrossed
+  TrendingUp, Bot, Bell, LogOut, ChefHat, LayoutDashboard, BookOpen, Download, Target, X, UtensilsCrossed, Boxes, ShoppingBag, Wallet
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -17,6 +17,9 @@ const navItems = [
   { href: '/producao', label: 'Produção e Desperdício', icon: Recycle },
   { href: '/produtos', label: 'Produtos', icon: BookOpen },
   { href: '/receitas', label: 'Receitas e Preços', icon: UtensilsCrossed },
+  { href: '/estoque', label: 'Estoque', icon: Boxes },
+  { href: '/encomendas', label: 'Encomendas', icon: ShoppingBag },
+  { href: '/caixa', label: 'Fechamento do Caixa', icon: Wallet },
   { href: '/metas', label: 'Metas', icon: Target },
   { href: '/relatorios', label: 'Relatórios', icon: TrendingUp },
   { href: '/assistente', label: 'Assistente IA', icon: Bot },
