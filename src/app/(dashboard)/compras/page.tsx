@@ -231,22 +231,27 @@ export default function ComprasPage() {
 
           <div className="divide-y max-h-96 overflow-y-auto">
             {nomesUnicos.map(nome => {
-              const diferente = mapeamento[nome] !== nome
+              const diferente = mapeamento[nome] !== nome && mapeamento[nome] !== ''
               return (
                 <div key={nome} className={`flex items-center gap-3 px-4 py-3 ${diferente ? 'bg-purple-50' : ''}`}>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-medium ${diferente ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{nome}</p>
-                    {diferente && <p className="text-xs text-purple-600 mt-0.5">→ será renomeado para &quot;{mapeamento[nome]}&quot;</p>}
+                    <p className="text-xs text-gray-400 mt-0.5">nome atual nas compras</p>
                   </div>
-                  <select
-                    value={mapeamento[nome] || nome}
-                    onChange={e => setMapeamento({ ...mapeamento, [nome]: e.target.value })}
-                    className={`border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 w-56 ${diferente ? 'border-purple-400 bg-purple-50' : ''}`}>
-                    <option value={nome}>{nome} (manter)</option>
-                    {produtos.map(p => (
-                      <option key={p.nome} value={p.nome}>{p.nome}</option>
-                    ))}
-                  </select>
+                  <div className="flex flex-col gap-1 w-60">
+                    <input
+                      list={`produtos-pad-${nome}`}
+                      value={mapeamento[nome] ?? nome}
+                      onChange={e => setMapeamento({ ...mapeamento, [nome]: e.target.value })}
+                      placeholder="Digite o nome padronizado..."
+                      className={`border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 ${diferente ? 'border-purple-400 bg-purple-50 font-medium text-purple-800' : ''}`}
+                    />
+                    <datalist id={`produtos-pad-${nome}`}>
+                      <option value={nome}>{nome} (manter)</option>
+                      {produtos.map(p => <option key={p.nome} value={p.nome} />)}
+                    </datalist>
+                    {diferente && <p className="text-xs text-purple-600">→ será renomeado</p>}
+                  </div>
                 </div>
               )
             })}

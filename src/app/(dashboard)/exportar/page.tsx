@@ -7,7 +7,7 @@ import { ptBR } from 'date-fns/locale'
 import { Download, FileSpreadsheet, FileText, Loader2 } from 'lucide-react'
 import MonthNav from '@/components/MonthNav'
 import { exportToExcel } from '@/lib/exportExcel'
-import { exportToPdf } from '@/lib/exportPdf'
+import { exportToPdf, ChartData } from '@/lib/exportPdf'
 
 const fmtMoeda = (v: number) => `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
 const fmtData = (d: string) => d ? format(new Date(d + 'T12:00:00'), 'dd/MM/yyyy') : '-'
@@ -101,6 +101,26 @@ export default function ExportarPage() {
     const totalGP = (gastosPessoais || []).reduce((s: number, g: any) => s + g.valor, 0)
     const resultado = totalVendas - totalCompras - totalCF - totalCV - totalGP
 
+    // Dados para os gráficos
+    const porData: Record<string, number> = {}
+    ;(vendas || []).forEach((v: any) => { porData[v.data] = (porData[v.data] || 0) + v.total })
+    const pgto = { dinheiro: 0, debito: 0, credito: 0, pix: 0 }
+    ;(vendas || []).forEach((v: any) => { pgto.dinheiro += v.dinheiro; pgto.debito += v.debito; pgto.credito += v.credito; pgto.pix += v.pix })
+
+    const chartData: ChartData = {
+      vendasPorDia: Object.entries(porData).sort(([a], [b]) => a.localeCompare(b)).map(([data, valor]) => ({
+        label: fmtData(data).slice(0, 5),
+        valor
+      })),
+      formasPagamento: [
+        { label: 'Dinheiro', valor: pgto.dinheiro, cor: '#f59e0b' },
+        { label: 'Débito', valor: pgto.debito, cor: '#3b82f6' },
+        { label: 'Crédito', valor: pgto.credito, cor: '#8b5cf6' },
+        { label: 'Pix', valor: pgto.pix, cor: '#10b981' },
+      ].filter(d => d.valor > 0),
+      resumo: { totalVendas, totalCompras, totalCustos: totalCF + totalCV + totalGP, resultado }
+    }
+
     exportToPdf('Relatório Completo da Padaria', [
       {
         titulo: `Vendas — Total: ${fmtMoeda(totalVendas)}`,
@@ -149,7 +169,7 @@ export default function ExportarPage() {
         ],
         total: `Resultado líquido: ${fmtMoeda(resultado)}`
       },
-    ], periodo)
+    ], periodo, chartData)
 
     setLoading(null)
   }
