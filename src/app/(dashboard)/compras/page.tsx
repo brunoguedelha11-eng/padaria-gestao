@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ItemCompra } from '@/types'
 import { format, startOfMonth, endOfMonth, addDays } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Plus, Package, Trash2, Download, ChevronDown, ChevronUp, BarChart2, Pencil, Check, X, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Plus, Package, Trash2, Download, ChevronDown, ChevronUp, BarChart2, Pencil, Check, X, AlertCircle, CheckCircle2, Wand2 } from 'lucide-react'
 import { exportToCsv } from '@/lib/exportCsv'
 import MonthNav from '@/components/MonthNav'
 
@@ -41,6 +41,10 @@ export default function ComprasPage() {
   const [itens, setItens] = useState([{ produto: '', quantidade: '', apresentacao: 'un', valor_unitario: '' }])
   const [itensEditaveis, setItensEditaveis] = useState<Record<string, ItemEditavel[]>>({})
   const [produtos, setProdutos] = useState<{ nome: string; unidade: string }[]>([])
+  const [padronizando, setPadronizando] = useState(false)
+  const [mapeamento, setMapeamento] = useState<Record<string, string>>({})
+  const [nomesUnicos, setNomesUnicos] = useState<string[]>([])
+  const [salvandoPadronizacao, setSalvandoPadronizacao] = useState(false)
 
   useEffect(() => { fetchCompras() }, [mes])
   useEffect(() => { fetchProdutos() }, [])
@@ -59,6 +63,30 @@ export default function ComprasPage() {
   async function fetchProdutos() {
     const { data } = await supabase.from('produtos').select('nome, unidade').in('categoria', ['compra', 'ambos']).order('nome')
     if (data) setProdutos(data.map(p => ({ nome: p.nome, unidade: p.unidade || 'un' })))
+  }
+
+  async function abrirPadronizacao() {
+    // Busca todos os nomes únicos usados em itens_compra
+    const { data } = await supabase.from('itens_compra').select('produto')
+    const unicos = [...new Set((data || []).map((i: any) => i.produto?.trim()).filter(Boolean))].sort()
+    setNomesUnicos(unicos)
+    // Pré-preenche com o próprio nome
+    const mapa: Record<string, string> = {}
+    unicos.forEach(n => { mapa[n] = n })
+    setMapeamento(mapa)
+    setPadronizando(true)
+  }
+
+  async function salvarPadronizacao() {
+    setSalvandoPadronizacao(true)
+    // Para cada nome que mudou, atualiza todos os itens_compra
+    const alterados = Object.entries(mapeamento).filter(([original, novo]) => original !== novo)
+    for (const [original, novo] of alterados) {
+      await supabase.from('itens_compra').update({ produto: novo }).eq('produto', original)
+    }
+    setSalvandoPadronizacao(false)
+    setPadronizando(false)
+    fetchCompras()
   }
 
   function selecionarProduto(idx: number, nome: string, unidade: string) {
@@ -169,6 +197,10 @@ export default function ComprasPage() {
         </div>
         <div className="flex items-center gap-3">
           <MonthNav mes={mes} onChange={setMes} />
+          <button onClick={abrirPadronizacao}
+            className="flex items-center gap-2 text-sm border border-purple-300 text-purple-700 rounded-lg px-3 py-2 hover:bg-purple-50 transition-colors">
+            <Wand2 className="w-4 h-4" /> Padronizar produtos
+          </button>
           <button onClick={() => setVerResumo(!verResumo)}
             className={`flex items-center gap-2 text-sm border rounded-lg px-3 py-2 transition-colors ${verResumo ? 'bg-amber-700 text-white border-amber-700' : 'border-gray-300 hover:bg-gray-50'}`}>
             <BarChart2 className="w-4 h-4" /> Resumo
@@ -183,6 +215,57 @@ export default function ComprasPage() {
           </div>
         </div>
       </div>
+
+      {/* Painel de padronização */}
+      {padronizando && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="p-4 border-b bg-purple-50 flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-purple-800 flex items-center gap-2"><Wand2 className="w-4 h-4" /> Padronizar nomes de produtos</h2>
+              <p className="text-xs text-purple-600 mt-0.5">
+                Esses são todos os nomes usados nas compras. Corrija os que estão errados ou divergentes usando o dropdown ao lado — a alteração vai atualizar <strong>todos</strong> os registros com aquele nome.
+              </p>
+            </div>
+            <button onClick={() => setPadronizando(false)} className="text-gray-400 hover:text-gray-600 ml-4"><X className="w-5 h-5" /></button>
+          </div>
+
+          <div className="divide-y max-h-96 overflow-y-auto">
+            {nomesUnicos.map(nome => {
+              const diferente = mapeamento[nome] !== nome
+              return (
+                <div key={nome} className={`flex items-center gap-3 px-4 py-3 ${diferente ? 'bg-purple-50' : ''}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium ${diferente ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{nome}</p>
+                    {diferente && <p className="text-xs text-purple-600 mt-0.5">→ será renomeado para "{mapeamento[nome]}"</p>}
+                  </div>
+                  <select
+                    value={mapeamento[nome] || nome}
+                    onChange={e => setMapeamento({ ...mapeamento, [nome]: e.target.value })}
+                    className={`border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 w-56 ${diferente ? 'border-purple-400 bg-purple-50' : ''}`}>
+                    <option value={nome}>{nome} (manter)</option>
+                    {produtos.map(p => (
+                      <option key={p.nome} value={p.nome}>{p.nome}</option>
+                    ))}
+                  </select>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="p-4 border-t bg-gray-50 flex items-center justify-between gap-3">
+            <p className="text-xs text-gray-500">
+              {Object.entries(mapeamento).filter(([o, n]) => o !== n).length} alteração(ões) pendente(s)
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setPadronizando(false)} className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-100">Cancelar</button>
+              <button onClick={salvarPadronizacao} disabled={salvandoPadronizacao || Object.entries(mapeamento).filter(([o, n]) => o !== n).length === 0}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2">
+                <Check className="w-4 h-4" /> {salvandoPadronizacao ? 'Salvando...' : 'Aplicar padronização'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {verResumo && (
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
@@ -377,8 +460,12 @@ export default function ComprasPage() {
                               {it.editando ? (
                                 <>
                                   <td className="py-2 pr-2">
-                                    <input list="produtos-edit" value={it._produto} onChange={e => atualizarCampoItem(c.id, it.id, '_produto', e.target.value)} className="w-full border rounded px-2 py-1 text-sm focus:outline-none" />
-                                    <datalist id="produtos-edit">{produtos.map(p => <option key={p.nome} value={p.nome} />)}</datalist>
+                                    <select value={it._produto} onChange={e => atualizarCampoItem(c.id, it.id, '_produto', e.target.value)} className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500">
+                                      {it._produto && !produtos.find(p => p.nome === it._produto) && (
+                                        <option value={it._produto}>{it._produto} (atual)</option>
+                                      )}
+                                      {produtos.map(p => <option key={p.nome} value={p.nome}>{p.nome}</option>)}
+                                    </select>
                                   </td>
                                   <td className="py-2 pr-2"><div className="flex gap-1">
                                     <input type="number" step="0.001" value={it._quantidade} onChange={e => atualizarCampoItem(c.id, it.id, '_quantidade', e.target.value)} className="w-20 border rounded px-2 py-1 text-sm" />
