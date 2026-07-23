@@ -155,7 +155,7 @@ export default function CaixaPage() {
               </p>
             </div>
           </div>
-          {fechamentoHoje.observacoes && <p className="text-xs text-gray-500 mt-2 italic">"{fechamentoHoje.observacoes}"</p>}
+          {fechamentoHoje.observacoes && <p className="text-xs text-gray-500 mt-2 italic">&quot;{fechamentoHoje.observacoes}&quot;</p>}
           {fechamentoHoje.diferenca !== null && Math.abs(fechamentoHoje.diferenca) > 1 && (
             <div className="mt-3 flex items-start gap-2 text-yellow-800 text-xs">
               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -234,7 +234,7 @@ export default function CaixaPage() {
                       <div><p className="text-xs text-gray-500">Compras</p><p className="font-bold text-orange-600">{fmt(f.total_compras)}</p></div>
                       <div><p className="text-xs text-gray-500">Valor físico</p><p className="font-bold">{f.valor_fisico !== null ? fmt(f.valor_fisico) : '—'}</p></div>
                       <div><p className="text-xs text-gray-500">Diferença</p><p className={`font-bold ${(f.diferenca || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{f.diferenca !== null ? fmt(f.diferenca) : '—'}</p></div>
-                      {f.observacoes && <p className="col-span-2 text-xs text-gray-400 italic">"{f.observacoes}"</p>}
+                      {f.observacoes && <p className="col-span-2 text-xs text-gray-400 italic">&quot;{f.observacoes}&quot;</p>}
                     </div>
                   )}
                 </div>

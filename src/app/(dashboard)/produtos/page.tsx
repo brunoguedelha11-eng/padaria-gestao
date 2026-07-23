@@ -272,7 +272,7 @@ export default function ProdutosPage() {
         <div className="text-center py-12 text-gray-400">
           <BookOpen className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p className="text-sm">Nenhum produto cadastrado ainda</p>
-          <p className="text-xs mt-1">Use "Importar do histórico" para preencher automaticamente</p>
+          <p className="text-xs mt-1">Use &quot;Importar do histórico&quot; para preencher automaticamente</p>
         </div>
       )}
     </div>

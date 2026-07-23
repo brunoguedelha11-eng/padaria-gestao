@@ -277,7 +277,7 @@ export default function EncomendasPage() {
                         </div>
                       ))}
                     </div>
-                    {enc.observacoes && <p className="text-xs text-gray-500 italic">"{enc.observacoes}"</p>}
+                    {enc.observacoes && <p className="text-xs text-gray-500 italic">&quot;{enc.observacoes}&quot;</p>}
                     <div className="flex gap-2">
                       <button onClick={() => marcarEntregue(enc.id)}
                         className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm hover:bg-green-700 flex items-center justify-center gap-1">

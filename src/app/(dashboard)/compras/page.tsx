@@ -236,7 +236,7 @@ export default function ComprasPage() {
                 <div key={nome} className={`flex items-center gap-3 px-4 py-3 ${diferente ? 'bg-purple-50' : ''}`}>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-medium ${diferente ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{nome}</p>
-                    {diferente && <p className="text-xs text-purple-600 mt-0.5">→ será renomeado para "{mapeamento[nome]}"</p>}
+                    {diferente && <p className="text-xs text-purple-600 mt-0.5">→ será renomeado para &quot;{mapeamento[nome]}&quot;</p>}
                   </div>
                   <select
                     value={mapeamento[nome] || nome}
