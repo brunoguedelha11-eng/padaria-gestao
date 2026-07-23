@@ -68,7 +68,7 @@ export default function ComprasPage() {
   async function abrirPadronizacao() {
     // Busca todos os nomes únicos usados em itens_compra
     const { data } = await supabase.from('itens_compra').select('produto')
-    const unicos = [...new Set((data || []).map((i: any) => i.produto?.trim()).filter(Boolean))].sort()
+    const unicos = Array.from(new Set((data || []).map((i: any) => i.produto?.trim()).filter(Boolean))).sort()
     setNomesUnicos(unicos)
     // Pré-preenche com o próprio nome
     const mapa: Record<string, string> = {}
