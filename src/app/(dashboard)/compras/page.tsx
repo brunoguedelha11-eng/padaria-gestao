@@ -40,7 +40,7 @@ export default function ComprasPage() {
   const [form, setForm] = useState(formVazio)
   const [itens, setItens] = useState([{ produto: '', quantidade: '', apresentacao: 'un', valor_unitario: '' }])
   const [itensEditaveis, setItensEditaveis] = useState<Record<string, ItemEditavel[]>>({})
-  const [produtos, setProdutos] = useState<string[]>([])
+  const [produtos, setProdutos] = useState<{ nome: string; unidade: string }[]>([])
 
   useEffect(() => { fetchCompras() }, [mes])
   useEffect(() => { fetchProdutos() }, [])
@@ -57,8 +57,14 @@ export default function ComprasPage() {
   }, [form.forma_pagamento, form.data])
 
   async function fetchProdutos() {
-    const { data } = await supabase.from('produtos').select('nome').in('categoria', ['compra', 'ambos']).order('nome')
-    if (data) setProdutos(data.map(p => p.nome))
+    const { data } = await supabase.from('produtos').select('nome, unidade').in('categoria', ['compra', 'ambos']).order('nome')
+    if (data) setProdutos(data.map(p => ({ nome: p.nome, unidade: p.unidade || 'un' })))
+  }
+
+  function selecionarProduto(idx: number, nome: string, unidade: string) {
+    const novo = [...itens]
+    novo[idx] = { ...novo[idx], produto: nome, apresentacao: unidade as any }
+    setItens(novo)
   }
 
   async function fetchCompras() {
@@ -243,6 +249,26 @@ export default function ComprasPage() {
             )}
           </div>
 
+          {/* Chips de produtos rápidos */}
+          {produtos.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-2">Produtos cadastrados — clique para adicionar rapidamente:</p>
+              <div className="flex flex-wrap gap-2">
+                {produtos.map(p => (
+                  <button key={p.nome} type="button"
+                    onClick={() => {
+                      const idx = itens.findIndex(it => it.produto === '')
+                      if (idx >= 0) selecionarProduto(idx, p.nome, p.unidade)
+                      else { addItem(); setTimeout(() => selecionarProduto(itens.length, p.nome, p.unidade), 0) }
+                    }}
+                    className="px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-full text-xs hover:bg-amber-100 hover:border-amber-400 transition-colors font-medium">
+                    {p.nome} <span className="text-amber-500 ml-1">{p.unidade}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-1">
               <div className="col-span-4">Produto</div><div className="col-span-2">Quantidade</div>
@@ -255,7 +281,7 @@ export default function ComprasPage() {
                   <div className="col-span-4">
                     <input list="produtos-compra" value={item.produto} onChange={e => updateItem(i, 'produto', e.target.value)} placeholder="Ex: Farinha de trigo" required
                       className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
-                    <datalist id="produtos-compra">{produtos.map(p => <option key={p} value={p} />)}</datalist>
+                    <datalist id="produtos-compra">{produtos.map(p => <option key={p.nome} value={p.nome} />)}</datalist>
                   </div>
                   <div className="col-span-2">
                     <input type="number" step="0.001" value={item.quantidade} onChange={e => updateItem(i, 'quantidade', e.target.value)} placeholder="0" required
@@ -352,7 +378,7 @@ export default function ComprasPage() {
                                 <>
                                   <td className="py-2 pr-2">
                                     <input list="produtos-edit" value={it._produto} onChange={e => atualizarCampoItem(c.id, it.id, '_produto', e.target.value)} className="w-full border rounded px-2 py-1 text-sm focus:outline-none" />
-                                    <datalist id="produtos-edit">{produtos.map(p => <option key={p} value={p} />)}</datalist>
+                                    <datalist id="produtos-edit">{produtos.map(p => <option key={p.nome} value={p.nome} />)}</datalist>
                                   </td>
                                   <td className="py-2 pr-2"><div className="flex gap-1">
                                     <input type="number" step="0.001" value={it._quantidade} onChange={e => atualizarCampoItem(c.id, it.id, '_quantidade', e.target.value)} className="w-20 border rounded px-2 py-1 text-sm" />
