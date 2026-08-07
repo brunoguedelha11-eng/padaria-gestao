@@ -12,6 +12,12 @@ import MonthNav from '@/components/MonthNav'
 const hoje = format(new Date(), 'yyyy-MM-dd')
 const formVazio = { data: hoje, dinheiro: '', debito: '', credito: '', pix: '', saidas: '', obs: '' }
 
+// A partir desta data, a saída de caixa deixa de ser subtraída do valor da venda:
+// ela passa a ser somada separadamente, sem afetar o total da venda.
+// Lançamentos anteriores a essa data mantêm a regra antiga (saída subtraindo o total),
+// preservando o resultado histórico de julho/2026.
+const DATA_CORTE_NOVA_REGRA = '2026-08-01'
+
 export default function VendasPage() {
   const supabase = createClient()
   const [mes, setMes] = useState(new Date())
@@ -38,9 +44,16 @@ export default function VendasPage() {
   const totalMes = vendas.reduce((s, v) => s + v.total, 0)
   const progressoPct = meta ? Math.min((totalMes / meta.meta_vendas) * 100, 100) : 0
 
+  function calcBruto(f: typeof form) {
+    return parseFloat(f.dinheiro || '0') + parseFloat(f.debito || '0') +
+      parseFloat(f.credito || '0') + parseFloat(f.pix || '0')
+  }
+
   function calcTotal(f: typeof form) {
-    return (parseFloat(f.dinheiro || '0') + parseFloat(f.debito || '0') +
-      parseFloat(f.credito || '0') + parseFloat(f.pix || '0')) - parseFloat(f.saidas || '0')
+    const bruto = calcBruto(f)
+    const saidas = parseFloat(f.saidas || '0')
+    if (f.data >= DATA_CORTE_NOVA_REGRA) return bruto
+    return bruto - saidas
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -52,7 +65,8 @@ export default function VendasPage() {
     const cred = parseFloat(form.credito || '0')
     const pix = parseFloat(form.pix || '0')
     const saidas = parseFloat(form.saidas || '0')
-    const total = din + deb + cred + pix - saidas
+    const bruto = din + deb + cred + pix
+    const total = form.data >= DATA_CORTE_NOVA_REGRA ? bruto : bruto - saidas
 
     if (editandoId) {
       await supabase.from('vendas').update({ data: form.data, dinheiro: din, debito: deb, credito: cred, pix, saidas, total, obs: form.obs }).eq('id', editandoId)
@@ -136,10 +150,19 @@ export default function VendasPage() {
               className="w-full border rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-amber-500" />
           </div>
           <div className="flex items-center justify-between pt-2 border-t">
-            <div className="text-lg font-bold text-gray-800">
-              Total: <span className={calcTotal(form) >= 0 ? 'text-green-600' : 'text-red-600'}>
-                R$ {calcTotal(form).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </span>
+            <div className="space-y-1">
+              <div className="text-lg font-bold text-gray-800">
+                Total da venda: <span className="text-green-600">
+                  R$ {calcTotal(form).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              {parseFloat(form.saidas || '0') > 0 && (
+                <div className="text-sm text-gray-500">
+                  Saída de caixa (à parte): <span className="text-red-500 font-medium">
+                    -R$ {parseFloat(form.saidas || '0').toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="flex gap-2">
               {editandoId && (
